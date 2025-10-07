@@ -24,13 +24,13 @@ const Invoices = () => {
   });
 
   const handlePrint = () => {
-    const ordersToP rint = orders?.filter(o => selectedOrders.includes(o.id));
-    if (!ordersToP rint?.length) return;
+    const ordersToPrint = orders?.filter(o => selectedOrders.includes(o.id));
+    if (!ordersToPrint?.length) return;
 
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    const invoicesHTML = ordersToP rint.map(order => `
+    const invoicesHTML = ordersToPrint.map(order => `
       <div style="width: 148mm; height: 210mm; padding: 10mm; page-break-after: always; font-family: Arial;">
         <h2 style="text-align: center;">Magou Fashion</h2>
         <hr/>
