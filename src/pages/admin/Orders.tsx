@@ -40,7 +40,7 @@ const Orders = () => {
         .from("orders")
         .select(`
           *,
-          customers (name, phone, address),
+          customers (name, phone, address, governorate),
           delivery_agents (name, serial_number),
           order_items (
             *,
@@ -124,6 +124,7 @@ const Orders = () => {
                       <TableHead>رقم الأوردر</TableHead>
                       <TableHead>العميل</TableHead>
                       <TableHead>الهاتف</TableHead>
+                      <TableHead>المحافظة</TableHead>
                       <TableHead>الإجمالي</TableHead>
                       <TableHead>الحالة</TableHead>
                       <TableHead>المندوب</TableHead>
@@ -141,6 +142,11 @@ const Orders = () => {
                           {order.customers?.name}
                         </TableCell>
                         <TableCell>{order.customers?.phone}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">
+                            {order.customers?.governorate || "-"}
+                          </Badge>
+                        </TableCell>
                         <TableCell>
                           {parseFloat(order.total_amount.toString()).toFixed(2)} ج.م
                         </TableCell>
@@ -207,12 +213,13 @@ const Orders = () => {
                               </DialogHeader>
                               {selectedOrder && selectedOrder.id === order.id && (
                                 <div className="space-y-4">
-                                  <div>
-                                    <h3 className="font-bold mb-2">معلومات العميل</h3>
-                                    <p>الاسم: {order.customers?.name}</p>
-                                    <p>الهاتف: {order.customers?.phone}</p>
-                                    <p>العنوان: {order.customers?.address}</p>
-                                  </div>
+                                <div>
+                                  <h3 className="font-bold mb-2">معلومات العميل</h3>
+                                  <p>الاسم: {order.customers?.name}</p>
+                                  <p>الهاتف: {order.customers?.phone}</p>
+                                  <p>المحافظة: {order.customers?.governorate || "-"}</p>
+                                  <p>العنوان: {order.customers?.address}</p>
+                                </div>
                                   <div>
                                     <h3 className="font-bold mb-2">المنتجات</h3>
                                     <Table>

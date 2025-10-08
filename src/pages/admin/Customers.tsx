@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { Trash2, ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -81,7 +82,11 @@ const Customers = () => {
                       <TableRow key={customer.id}>
                         <TableCell className="font-medium">{customer.name}</TableCell>
                         <TableCell>{customer.phone}</TableCell>
-                        <TableCell>{customer.governorate || "-"}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">
+                            {customer.governorate || "-"}
+                          </Badge>
+                        </TableCell>
                         <TableCell className="max-w-xs truncate">{customer.address}</TableCell>
                         <TableCell>
                           {new Date(customer.created_at).toLocaleDateString("ar-EG")}
