@@ -1,10 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Search, X } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Search, X, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
@@ -19,92 +17,90 @@ const SearchBar = () => {
     customers: any[];
   }>({ orders: [], customers: [] });
 
+  // Live search with debounce
+  useEffect(() => {
+    const delayDebounce = setTimeout(() => {
+      if (searchQuery.trim().length >= 3) {
+        handleSearch();
+      } else if (searchQuery.trim().length === 0) {
+        setResults({ orders: [], customers: [] });
+        setShowResults(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(delayDebounce);
+  }, [searchQuery]);
+
   const handleSearch = async () => {
-    if (!searchQuery.trim()) {
-      toast.error("الرجاء إدخال رقم هاتف أو رقم أوردر");
+    if (!searchQuery.trim() || searchQuery.trim().length < 3) {
       return;
     }
 
     setIsSearching(true);
     try {
+      const searchTerm = searchQuery.trim();
+
       // البحث في العملاء برقم الهاتف
       const { data: customers, error: customersError } = await supabase
         .from("customers")
         .select("*")
-        .ilike("phone", `%${searchQuery}%`);
+        .ilike("phone", `%${searchTerm}%`);
 
-      if (customersError) throw customersError;
+      if (customersError) {
+        console.error("خطأ في البحث عن العملاء:", customersError);
+      }
 
-      // البحث في الأوردرات برقم الأوردر أو رقم هاتف العميل
-      const { data: orders, error: ordersError } = await supabase
+      // البحث في الأوردرات برقم الأوردر
+      const { data: ordersByIdOnly, error: ordersIdError } = await supabase
         .from("orders")
         .select(`
           *,
-          customers (name, phone, address),
+          customers (name, phone, address, governorate),
           delivery_agents (name, serial_number),
           order_items (
             *,
             products (name, price)
           )
         `)
-        .or(`id.ilike.%${searchQuery}%,customers.phone.ilike.%${searchQuery}%`);
+        .ilike("id", `%${searchTerm}%`);
 
-      if (ordersError) {
-        // إذا فشل البحث المركب، نبحث فقط في معرف الأوردر
-        const { data: ordersByIdOnly, error: ordersIdError } = await supabase
+      if (ordersIdError) {
+        console.error("خطأ في البحث عن الأوردرات:", ordersIdError);
+      }
+
+      // البحث في الأوردرات بناءً على معرفات العملاء المطابقة
+      const customerIds = customers?.map(c => c.id) || [];
+      let ordersByCustomer: any[] = [];
+      
+      if (customerIds.length > 0) {
+        const { data: custOrders, error: custOrdersError } = await supabase
           .from("orders")
           .select(`
             *,
-            customers (name, phone, address),
+            customers (name, phone, address, governorate),
             delivery_agents (name, serial_number),
             order_items (
               *,
               products (name, price)
             )
           `)
-          .ilike("id", `%${searchQuery}%`);
+          .in("customer_id", customerIds);
 
-        if (ordersIdError) throw ordersIdError;
-
-        // البحث في الأوردرات بناءً على معرفات العملاء المطابقة
-        const customerIds = customers?.map(c => c.id) || [];
-        let ordersByCustomer: any[] = [];
-        
-        if (customerIds.length > 0) {
-          const { data: custOrders, error: custOrdersError } = await supabase
-            .from("orders")
-            .select(`
-              *,
-              customers (name, phone, address),
-              delivery_agents (name, serial_number),
-              order_items (
-                *,
-                products (name, price)
-              )
-            `)
-            .in("customer_id", customerIds);
-
-          if (!custOrdersError) {
-            ordersByCustomer = custOrders || [];
-          }
+        if (!custOrdersError && custOrders) {
+          ordersByCustomer = custOrders;
         }
-
-        // دمج النتائج
-        const allOrders = [...(ordersByIdOnly || []), ...ordersByCustomer];
-        const uniqueOrders = allOrders.filter((order, index, self) =>
-          index === self.findIndex((o) => o.id === order.id)
-        );
-
-        setResults({
-          orders: uniqueOrders,
-          customers: customers || []
-        });
-      } else {
-        setResults({
-          orders: orders || [],
-          customers: customers || []
-        });
       }
+
+      // دمج النتائج
+      const allOrders = [...(ordersByIdOnly || []), ...ordersByCustomer];
+      const uniqueOrders = allOrders.filter((order, index, self) =>
+        index === self.findIndex((o) => o.id === order.id)
+      );
+
+      setResults({
+        orders: uniqueOrders,
+        customers: customers || []
+      });
 
       setShowResults(true);
     } catch (error) {
@@ -145,49 +141,59 @@ const SearchBar = () => {
 
   return (
     <>
-      <div className="flex gap-2 mb-6">
-        <div className="relative flex-1">
+      <div className="relative mb-6">
+        <div className="relative">
           <Input
-            placeholder="ابحث برقم الهاتف أو رقم الأوردر..."
+            placeholder="ابحث برقم الهاتف أو رقم الأوردر (3 أحرف على الأقل)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyPress={handleKeyPress}
-            className="pl-10"
+            className="pl-10 pr-10"
           />
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          {isSearching ? (
+            <Loader2 className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground animate-spin" />
+          ) : (
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          )}
           {searchQuery && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute right-2 top-1/2 transform -translate-y-1/2 h-6 w-6"
+            <button
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground hover:text-foreground"
               onClick={clearSearch}
             >
               <X className="h-4 w-4" />
-            </Button>
+            </button>
           )}
         </div>
-        <Button onClick={handleSearch} disabled={isSearching}>
-          {isSearching ? "جاري البحث..." : "بحث"}
-        </Button>
       </div>
 
-      <Dialog open={showResults} onOpenChange={setShowResults}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>نتائج البحث</DialogTitle>
-          </DialogHeader>
+      {showResults && (results.customers.length > 0 || results.orders.length > 0) && (
+        <Card className="mb-6 max-h-[500px] overflow-y-auto">
+          <CardContent className="p-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold">نتائج البحث</h3>
+              <button
+                onClick={() => setShowResults(false)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
 
-          <div className="space-y-6">
-            {results.customers.length > 0 && (
-              <div>
-                <h3 className="text-lg font-bold mb-3">العملاء ({results.customers.length})</h3>
-                <div className="space-y-2">
-                  {results.customers.map((customer) => (
-                    <Card key={customer.id} className="cursor-pointer hover:bg-accent" onClick={() => {
-                      navigate("/admin/customers");
-                      setShowResults(false);
-                    }}>
-                      <CardContent className="p-4">
+            <div className="space-y-4">
+              {results.customers.length > 0 && (
+                <div>
+                  <h4 className="font-semibold mb-2">العملاء ({results.customers.length})</h4>
+                  <div className="space-y-2">
+                    {results.customers.map((customer) => (
+                      <div
+                        key={customer.id}
+                        className="p-3 border rounded-lg cursor-pointer hover:bg-accent transition-colors"
+                        onClick={() => {
+                          navigate("/admin/customers");
+                          setShowResults(false);
+                          setSearchQuery("");
+                        }}
+                      >
                         <div className="flex justify-between items-start">
                           <div>
                             <p className="font-bold">{customer.name}</p>
@@ -196,23 +202,26 @@ const SearchBar = () => {
                           </div>
                           <Badge variant="outline">{customer.governorate || "-"}</Badge>
                         </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {results.orders.length > 0 && (
-              <div>
-                <h3 className="text-lg font-bold mb-3">الأوردرات ({results.orders.length})</h3>
-                <div className="space-y-2">
-                  {results.orders.map((order) => (
-                    <Card key={order.id} className="cursor-pointer hover:bg-accent" onClick={() => {
-                      navigate("/admin/orders");
-                      setShowResults(false);
-                    }}>
-                      <CardContent className="p-4">
+              {results.orders.length > 0 && (
+                <div>
+                  <h4 className="font-semibold mb-2">الأوردرات ({results.orders.length})</h4>
+                  <div className="space-y-2">
+                    {results.orders.map((order) => (
+                      <div
+                        key={order.id}
+                        className="p-3 border rounded-lg cursor-pointer hover:bg-accent transition-colors"
+                        onClick={() => {
+                          navigate("/admin/orders");
+                          setShowResults(false);
+                          setSearchQuery("");
+                        }}
+                      >
                         <div className="flex justify-between items-start mb-2">
                           <div>
                             <p className="font-mono text-xs text-muted-foreground mb-1">
@@ -236,21 +245,15 @@ const SearchBar = () => {
                             المندوب: {order.delivery_agents.name}
                           </Badge>
                         )}
-                      </CardContent>
-                    </Card>
-                  ))}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
-
-            {results.customers.length === 0 && results.orders.length === 0 && (
-              <p className="text-center text-muted-foreground py-8">
-                لم يتم العثور على نتائج
-              </p>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </>
   );
 };
