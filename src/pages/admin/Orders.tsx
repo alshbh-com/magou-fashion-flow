@@ -10,6 +10,7 @@ import { ArrowLeft, Eye } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import SearchBar from "@/components/admin/SearchBar";
 
 const statusLabels: Record<string, string> = {
   pending: "قيد الانتظار",
@@ -112,6 +113,7 @@ const Orders = () => {
             <CardTitle>الأوردرات</CardTitle>
           </CardHeader>
           <CardContent>
+            <SearchBar />
             {!orders || orders.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">لا توجد أوردرات</p>
             ) : (

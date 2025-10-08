@@ -6,6 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Trash2, ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import SearchBar from "@/components/admin/SearchBar";
 
 const Customers = () => {
   const navigate = useNavigate();
@@ -59,6 +60,7 @@ const Customers = () => {
             <CardTitle>العملاء</CardTitle>
           </CardHeader>
           <CardContent>
+            <SearchBar />
             {!customers || customers.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">لا يوجد عملاء</p>
             ) : (

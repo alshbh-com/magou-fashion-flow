@@ -13,6 +13,7 @@ import {
   Settings
 } from "lucide-react";
 import { Link } from "react-router-dom";
+import SearchBar from "@/components/admin/SearchBar";
 
 const adminSections = [
   {
@@ -87,6 +88,10 @@ const Dashboard = () => {
       <div className="container mx-auto px-4">
         <h1 className="text-4xl font-bold mb-2">لوحة التحكم</h1>
         <p className="text-muted-foreground mb-8">إدارة متجر Magou Fashion</p>
+
+        <div className="mb-8">
+          <SearchBar />
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {adminSections.map((section) => (
