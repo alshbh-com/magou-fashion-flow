@@ -25,7 +25,10 @@ const Products = () => {
     price: "",
     offer_price: "",
     stock: "",
-    is_offer: false
+    is_offer: false,
+    size_options: "",
+    color_options: "",
+    details: ""
   });
 
   const { data: products, isLoading } = useQuery({
@@ -68,7 +71,10 @@ const Products = () => {
         image_url: imageUrl,
         price: parseFloat(data.price),
         offer_price: data.offer_price ? parseFloat(data.offer_price) : null,
-        stock: parseInt(data.stock)
+        stock: parseInt(data.stock),
+        size_options: data.size_options ? data.size_options.split(',').map((s: string) => s.trim()) : null,
+        color_options: data.color_options ? data.color_options.split(',').map((c: string) => c.trim()) : null,
+        details: data.details || null
       };
       
       if (editingProduct) {
@@ -123,7 +129,10 @@ const Products = () => {
       price: "",
       offer_price: "",
       stock: "",
-      is_offer: false
+      is_offer: false,
+      size_options: "",
+      color_options: "",
+      details: ""
     });
     setEditingProduct(null);
     setImageFile(null);
@@ -137,7 +146,10 @@ const Products = () => {
       price: product.price.toString(),
       offer_price: product.offer_price?.toString() || "",
       stock: product.stock.toString(),
-      is_offer: product.is_offer
+      is_offer: product.is_offer,
+      size_options: product.size_options?.join(', ') || "",
+      color_options: product.color_options?.join(', ') || "",
+      details: product.details || ""
     });
     setOpen(true);
   };
@@ -239,6 +251,37 @@ const Products = () => {
                       value={formData.stock}
                       onChange={(e) => setFormData({...formData, stock: e.target.value})}
                       required
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="size_options">المقاسات المتاحة (مفصولة بفاصلة)</Label>
+                    <Input
+                      id="size_options"
+                      value={formData.size_options}
+                      onChange={(e) => setFormData({...formData, size_options: e.target.value})}
+                      placeholder="S, M, L, XL"
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="color_options">الألوان المتاحة (مفصولة بفاصلة)</Label>
+                    <Input
+                      id="color_options"
+                      value={formData.color_options}
+                      onChange={(e) => setFormData({...formData, color_options: e.target.value})}
+                      placeholder="أحمر, أزرق, أخضر"
+                    />
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="details">تفاصيل المنتج</Label>
+                    <Textarea
+                      id="details"
+                      value={formData.details}
+                      onChange={(e) => setFormData({...formData, details: e.target.value})}
+                      rows={3}
+                      placeholder="معلومات إضافية عن المنتج..."
                     />
                   </div>
                   

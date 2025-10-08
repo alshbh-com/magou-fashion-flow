@@ -7,6 +7,9 @@ export interface CartItem {
   price: number;
   quantity: number;
   image_url?: string;
+  size?: string;
+  color?: string;
+  details?: string;
 }
 
 interface CartStore {
@@ -14,6 +17,7 @@ interface CartStore {
   addItem: (item: Omit<CartItem, 'quantity'>) => void;
   removeItem: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
+  updateItemDetails: (id: string, size?: string, color?: string) => void;
   clearCart: () => void;
   getTotalPrice: () => number;
   getTotalItems: () => number;
@@ -46,6 +50,12 @@ export const useCart = create<CartStore>()(
           : state.items.map(item =>
               item.id === id ? { ...item, quantity } : item
             )
+      })),
+      
+      updateItemDetails: (id, size, color) => set((state) => ({
+        items: state.items.map(item =>
+          item.id === id ? { ...item, size, color } : item
+        )
       })),
       
       clearCart: () => set({ items: [] }),

@@ -5,13 +5,14 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Minus, Plus, Trash2, ShoppingBag } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 
 const Cart = () => {
-  const { items, removeItem, updateQuantity, clearCart, getTotalPrice } = useCart();
+  const { items, removeItem, updateQuantity, updateItemDetails, clearCart, getTotalPrice } = useCart();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   
@@ -37,7 +38,6 @@ const Cart = () => {
     setLoading(true);
 
     try {
-      // Create customer
       const { data: customer, error: customerError } = await supabase
         .from("customers")
         .insert({
@@ -51,7 +51,6 @@ const Cart = () => {
 
       if (customerError) throw customerError;
 
-      // Create order
       const { data: order, error: orderError } = await supabase
         .from("orders")
         .insert({
@@ -65,12 +64,14 @@ const Cart = () => {
 
       if (orderError) throw orderError;
 
-      // Create order items
       const orderItems = items.map(item => ({
         order_id: order.id,
         product_id: item.id,
         quantity: item.quantity,
-        price: item.price
+        price: item.price,
+        size: item.size,
+        color: item.color,
+        product_details: item.details
       }));
 
       const { error: itemsError } = await supabase
@@ -140,9 +141,34 @@ const Cart = () => {
                     {/* Product Details */}
                     <div className="flex-1">
                       <h3 className="font-bold text-lg mb-2">{item.name}</h3>
-                      <p className="text-primary font-bold text-xl">
+                      <p className="text-primary font-bold text-xl mb-3">
                         {item.price.toFixed(2)} ج.م
                       </p>
+
+                      {/* Size and Color Selectors */}
+                      {item.details && (
+                        <div className="grid grid-cols-2 gap-2 mb-3">
+                          {/* Parse size and color options from details */}
+                          <div>
+                            <Label className="text-xs">المقاس</Label>
+                            <Input
+                              value={item.size || ""}
+                              onChange={(e) => updateItemDetails(item.id, e.target.value, item.color)}
+                              placeholder="المقاس"
+                              className="h-8"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">اللون</Label>
+                            <Input
+                              value={item.color || ""}
+                              onChange={(e) => updateItemDetails(item.id, item.size, e.target.value)}
+                              placeholder="اللون"
+                              className="h-8"
+                            />
+                          </div>
+                        </div>
+                      )}
 
                       {/* Quantity Controls */}
                       <div className="flex items-center gap-2 mt-4">

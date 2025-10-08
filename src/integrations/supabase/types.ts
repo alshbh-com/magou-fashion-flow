@@ -21,6 +21,7 @@ export type Database = {
           delivery_agent_id: string | null
           id: string
           notes: string | null
+          order_id: string | null
           payment_type: string
         }
         Insert: {
@@ -29,6 +30,7 @@ export type Database = {
           delivery_agent_id?: string | null
           id?: string
           notes?: string | null
+          order_id?: string | null
           payment_type: string
         }
         Update: {
@@ -37,6 +39,7 @@ export type Database = {
           delivery_agent_id?: string | null
           id?: string
           notes?: string | null
+          order_id?: string | null
           payment_type?: string
         }
         Relationships: [
@@ -45,6 +48,13 @@ export type Database = {
             columns: ["delivery_agent_id"]
             isOneToOne: false
             referencedRelation: "delivery_agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_payments_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
             referencedColumns: ["id"]
           },
         ]
@@ -108,28 +118,37 @@ export type Database = {
       }
       order_items: {
         Row: {
+          color: string | null
           created_at: string | null
           id: string
           order_id: string | null
           price: number
+          product_details: string | null
           product_id: string | null
           quantity: number
+          size: string | null
         }
         Insert: {
+          color?: string | null
           created_at?: string | null
           id?: string
           order_id?: string | null
           price: number
+          product_details?: string | null
           product_id?: string | null
           quantity: number
+          size?: string | null
         }
         Update: {
+          color?: string | null
           created_at?: string | null
           id?: string
           order_id?: string | null
           price?: number
+          product_details?: string | null
           product_id?: string | null
           quantity?: number
+          size?: string | null
         }
         Relationships: [
           {
@@ -201,42 +220,106 @@ export type Database = {
       }
       products: {
         Row: {
+          color_options: string[] | null
           created_at: string | null
           description: string | null
+          details: string | null
           id: string
           image_url: string | null
           is_offer: boolean | null
           name: string
           offer_price: number | null
           price: number
+          size_options: string[] | null
           stock: number | null
           updated_at: string | null
         }
         Insert: {
+          color_options?: string[] | null
           created_at?: string | null
           description?: string | null
+          details?: string | null
           id?: string
           image_url?: string | null
           is_offer?: boolean | null
           name: string
           offer_price?: number | null
           price: number
+          size_options?: string[] | null
           stock?: number | null
           updated_at?: string | null
         }
         Update: {
+          color_options?: string[] | null
           created_at?: string | null
           description?: string | null
+          details?: string | null
           id?: string
           image_url?: string | null
           is_offer?: boolean | null
           name?: string
           offer_price?: number | null
           price?: number
+          size_options?: string[] | null
           stock?: number | null
           updated_at?: string | null
         }
         Relationships: []
+      }
+      returns: {
+        Row: {
+          created_at: string | null
+          customer_id: string | null
+          delivery_agent_id: string | null
+          id: string
+          notes: string | null
+          order_id: string | null
+          return_amount: number
+          returned_items: Json
+        }
+        Insert: {
+          created_at?: string | null
+          customer_id?: string | null
+          delivery_agent_id?: string | null
+          id?: string
+          notes?: string | null
+          order_id?: string | null
+          return_amount?: number
+          returned_items?: Json
+        }
+        Update: {
+          created_at?: string | null
+          customer_id?: string | null
+          delivery_agent_id?: string | null
+          id?: string
+          notes?: string | null
+          order_id?: string | null
+          return_amount?: number
+          returned_items?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "returns_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "returns_delivery_agent_id_fkey"
+            columns: ["delivery_agent_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "returns_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       statistics: {
         Row: {
@@ -276,6 +359,8 @@ export type Database = {
         | "shipped"
         | "delivered"
         | "cancelled"
+        | "returned"
+        | "partially_returned"
       payment_status: "pending" | "partial" | "paid"
     }
     CompositeTypes: {
@@ -410,6 +495,8 @@ export const Constants = {
         "shipped",
         "delivered",
         "cancelled",
+        "returned",
+        "partially_returned",
       ],
       payment_status: ["pending", "partial", "paid"],
     },

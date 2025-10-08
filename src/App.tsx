@@ -15,6 +15,7 @@ import AgentOrders from "./pages/admin/AgentOrders";
 import AgentPayments from "./pages/admin/AgentPayments";
 import Statistics from "./pages/admin/Statistics";
 import Invoices from "./pages/admin/Invoices";
+import Returns from "./pages/admin/Returns";
 import BottomNav from "./components/BottomNav";
 import NotFound from "./pages/NotFound";
 
@@ -40,6 +41,7 @@ const App = () => (
             <Route path="/admin/agent-payments" element={<AgentPayments />} />
             <Route path="/admin/statistics" element={<Statistics />} />
             <Route path="/admin/invoices" element={<Invoices />} />
+            <Route path="/admin/returns" element={<Returns />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

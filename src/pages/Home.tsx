@@ -33,7 +33,8 @@ const Home = () => {
       id: product.id,
       name: product.name,
       price: price,
-      image_url: product.image_url
+      image_url: product.image_url,
+      details: product.details
     });
     
     toast.success("تم إضافة المنتج إلى السلة");
