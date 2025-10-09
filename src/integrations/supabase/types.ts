@@ -230,6 +230,7 @@ export type Database = {
           name: string
           offer_price: number | null
           price: number
+          quantity_pricing: Json | null
           size_options: string[] | null
           stock: number | null
           updated_at: string | null
@@ -245,6 +246,7 @@ export type Database = {
           name: string
           offer_price?: number | null
           price: number
+          quantity_pricing?: Json | null
           size_options?: string[] | null
           stock?: number | null
           updated_at?: string | null
@@ -260,6 +262,7 @@ export type Database = {
           name?: string
           offer_price?: number | null
           price?: number
+          quantity_pricing?: Json | null
           size_options?: string[] | null
           stock?: number | null
           updated_at?: string | null

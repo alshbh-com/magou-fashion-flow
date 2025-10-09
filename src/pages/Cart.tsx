@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useCart } from "@/hooks/useCart";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -12,7 +13,7 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 
 const Cart = () => {
-  const { items, removeItem, updateQuantity, updateItemDetails, clearCart, getTotalPrice } = useCart();
+  const { items, removeItem, updateQuantity, updateItemDetails, clearCart } = useCart();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   
@@ -23,6 +24,48 @@ const Cart = () => {
     governorate: "",
     notes: ""
   });
+
+  const { data: products } = useQuery({
+    queryKey: ["products"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("products")
+        .select("*");
+      
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const getProductPrice = (productId: string, quantity: number) => {
+    const product = products?.find(p => p.id === productId);
+    if (!product) return 0;
+
+    // Check for quantity pricing
+    if (product.quantity_pricing && Array.isArray(product.quantity_pricing) && product.quantity_pricing.length > 0) {
+      const pricing = (product.quantity_pricing as Array<{ quantity: number; price: number }>)
+        .filter((qp) => qp.quantity <= quantity)
+        .sort((a, b) => b.quantity - a.quantity);
+      
+      if (pricing.length > 0) {
+        return parseFloat(pricing[0].price.toString());
+      }
+    }
+
+    // Check for offer price
+    if (product.is_offer && product.offer_price) {
+      return parseFloat(product.offer_price.toString());
+    }
+
+    return parseFloat(product.price.toString());
+  };
+
+  const getTotalPrice = () => {
+    return items.reduce((sum, item) => {
+      const price = getProductPrice(item.id, item.quantity);
+      return sum + (price * item.quantity);
+    }, 0);
+  };
 
   const handleSubmitOrder = async () => {
     if (!customerInfo.name || !customerInfo.phone || !customerInfo.address) {
@@ -64,15 +107,19 @@ const Cart = () => {
 
       if (orderError) throw orderError;
 
-      const orderItems = items.map(item => ({
-        order_id: order.id,
-        product_id: item.id,
-        quantity: item.quantity,
-        price: item.price,
-        size: item.size,
-        color: item.color,
-        product_details: item.details
-      }));
+      const orderItems = items.map(item => {
+        const price = getProductPrice(item.id, item.quantity);
+        
+        return {
+          order_id: order.id,
+          product_id: item.id,
+          quantity: item.quantity,
+          price: price,
+          size: item.size || null,
+          color: item.color || null,
+          product_details: item.details || null
+        };
+      });
 
       const { error: itemsError } = await supabase
         .from("order_items")
@@ -146,7 +193,10 @@ const Cart = () => {
                     <div className="flex-1">
                       <h3 className="font-bold text-2xl mb-3">{item.name}</h3>
                       <p className="text-primary font-bold text-2xl mb-4">
-                        {item.price.toFixed(2)} ج.م
+                        {getProductPrice(item.id, item.quantity).toFixed(2)} ج.م / قطعة
+                      </p>
+                      <p className="text-lg font-semibold mb-4">
+                        الإجمالي: {(getProductPrice(item.id, item.quantity) * item.quantity).toFixed(2)} ج.م
                       </p>
 
                       {/* Size and Color Selectors */}

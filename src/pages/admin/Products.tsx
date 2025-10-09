@@ -28,7 +28,8 @@ const Products = () => {
     is_offer: false,
     size_options: "",
     color_options: "",
-    details: ""
+    details: "",
+    quantity_pricing: Array.from({ length: 12 }, (_, i) => ({ quantity: i + 1, price: "" }))
   });
 
   const { data: products, isLoading } = useQuery({
@@ -66,6 +67,10 @@ const Products = () => {
         imageUrl = publicUrl;
       }
       
+      const quantityPricing = data.quantity_pricing
+        .filter((qp: any) => qp.price && parseFloat(qp.price) > 0)
+        .map((qp: any) => ({ quantity: qp.quantity, price: parseFloat(qp.price) }));
+
       const productData = {
         ...data,
         image_url: imageUrl,
@@ -74,7 +79,8 @@ const Products = () => {
         stock: parseInt(data.stock),
         size_options: data.size_options ? data.size_options.split(',').map((s: string) => s.trim()) : null,
         color_options: data.color_options ? data.color_options.split(',').map((c: string) => c.trim()) : null,
-        details: data.details || null
+        details: data.details || null,
+        quantity_pricing: quantityPricing.length > 0 ? quantityPricing : null
       };
       
       if (editingProduct) {
@@ -132,7 +138,8 @@ const Products = () => {
       is_offer: false,
       size_options: "",
       color_options: "",
-      details: ""
+      details: "",
+      quantity_pricing: Array.from({ length: 12 }, (_, i) => ({ quantity: i + 1, price: "" }))
     });
     setEditingProduct(null);
     setImageFile(null);
@@ -140,6 +147,12 @@ const Products = () => {
 
   const handleEdit = (product: any) => {
     setEditingProduct(product);
+    
+    const quantityPricingData = Array.from({ length: 12 }, (_, i) => {
+      const existingPrice = product.quantity_pricing?.find((qp: any) => qp.quantity === i + 1);
+      return { quantity: i + 1, price: existingPrice?.price?.toString() || "" };
+    });
+
     setFormData({
       name: product.name,
       description: product.description || "",
@@ -149,7 +162,8 @@ const Products = () => {
       is_offer: product.is_offer,
       size_options: product.size_options?.join(', ') || "",
       color_options: product.color_options?.join(', ') || "",
-      details: product.details || ""
+      details: product.details || "",
+      quantity_pricing: quantityPricingData
     });
     setOpen(true);
   };
@@ -283,6 +297,31 @@ const Products = () => {
                       rows={3}
                       placeholder="معلومات إضافية عن المنتج..."
                     />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>التسعير حسب الكمية (اختياري)</Label>
+                    <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto p-2 border rounded">
+                      {formData.quantity_pricing.map((qp, index) => (
+                        <div key={index} className="flex items-center gap-2">
+                          <Label className="text-xs w-20">كمية {qp.quantity}:</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="السعر"
+                            value={qp.price}
+                            onChange={(e) => {
+                              const newPricing = [...formData.quantity_pricing];
+                              newPricing[index].price = e.target.value;
+                              setFormData({...formData, quantity_pricing: newPricing});
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      حدد السعر لكل كمية (1-12 قطعة). اترك فارغاً لاستخدام السعر الأساسي.
+                    </p>
                   </div>
                   
                   <div>

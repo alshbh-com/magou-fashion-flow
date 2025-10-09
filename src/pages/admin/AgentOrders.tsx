@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, PackageX } from "lucide-react";
+import { ArrowLeft, PackageX, Printer } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -179,6 +179,64 @@ const AgentOrders = () => {
     });
   };
 
+  const handlePrintOrder = (order: any) => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const orderItems = order.order_items?.map((item: any) => `
+      <tr>
+        <td style="border: 1px solid #ddd; padding: 8px;">${item.products?.name}</td>
+        <td style="border: 1px solid #ddd; padding: 8px;">${item.quantity}</td>
+        <td style="border: 1px solid #ddd; padding: 8px;">${parseFloat(item.price.toString()).toFixed(2)} ج.م</td>
+        <td style="border: 1px solid #ddd; padding: 8px;">${(parseFloat(item.price.toString()) * item.quantity).toFixed(2)} ج.م</td>
+      </tr>
+    `).join('');
+
+    printWindow.document.write(`
+      <html dir="rtl">
+        <head>
+          <title>فاتورة - ${order.id.slice(0, 8)}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            h1 { text-align: center; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { border: 1px solid #ddd; padding: 12px; text-align: right; }
+            th { background-color: #f2f2f2; }
+            .info { margin: 20px 0; }
+            .total { font-size: 18px; font-weight: bold; margin-top: 20px; }
+          </style>
+        </head>
+        <body>
+          <h1>فاتورة</h1>
+          <div class="info">
+            <p><strong>رقم الأوردر:</strong> ${order.id.slice(0, 8)}</p>
+            <p><strong>اسم العميل:</strong> ${order.customers?.name}</p>
+            <p><strong>الهاتف:</strong> ${order.customers?.phone}</p>
+            <p><strong>العنوان:</strong> ${order.customers?.address}</p>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>المنتج</th>
+                <th>الكمية</th>
+                <th>السعر</th>
+                <th>الإجمالي</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${orderItems}
+            </tbody>
+          </table>
+          <div class="total">
+            الإجمالي الكلي: ${parseFloat(order.total_amount.toString()).toFixed(2)} ج.م
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-accent/20 py-8">
       <div className="container mx-auto px-4">
@@ -269,14 +327,24 @@ const AgentOrders = () => {
                           {new Date(order.created_at).toLocaleDateString("ar-EG")}
                         </TableCell>
                         <TableCell>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleOpenReturnDialog(order)}
-                          >
-                            <PackageX className="ml-2 h-4 w-4" />
-                            مرتجع
-                          </Button>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handlePrintOrder(order)}
+                              title="طباعة الفاتورة"
+                            >
+                              <Printer className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleOpenReturnDialog(order)}
+                            >
+                              <PackageX className="ml-2 h-4 w-4" />
+                              مرتجع
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
