@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Minus, Plus, Trash2, ShoppingBag } from "lucide-react";
+import { Minus, Plus, Trash2, ShoppingBag, ArrowLeft } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
@@ -113,18 +113,22 @@ const Cart = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-accent/20 py-8">
-      <div className="container mx-auto px-4">
-        <h1 className="text-3xl font-bold mb-8">السلة</h1>
+      <div className="container mx-auto px-4 max-w-6xl">
+        <Button onClick={() => navigate("/")} variant="ghost" className="mb-4 text-lg">
+          <ArrowLeft className="ml-2 h-5 w-5" />
+          الرجوع للمتجر
+        </Button>
+        <h1 className="text-4xl font-bold mb-8 text-center">فاتورة الطلب</h1>
 
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Cart Items */}
-          <div className="lg:col-span-2 space-y-4">
+          <div className="lg:col-span-2 space-y-6">
             {items.map((item) => (
-              <Card key={item.id}>
-                <CardContent className="p-6">
-                  <div className="flex gap-4">
+              <Card key={item.id} className="shadow-lg border-2">
+                <CardContent className="p-8">
+                  <div className="flex gap-6">
                     {/* Product Image */}
-                    <div className="w-24 h-24 bg-muted rounded-lg overflow-hidden flex-shrink-0">
+                    <div className="w-32 h-32 bg-muted rounded-lg overflow-hidden flex-shrink-0">
                       {item.image_url ? (
                         <img 
                           src={item.image_url} 
@@ -133,67 +137,68 @@ const Cart = () => {
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
-                          <ShoppingBag className="w-8 h-8 text-muted-foreground" />
+                          <ShoppingBag className="w-12 h-12 text-muted-foreground" />
                         </div>
                       )}
                     </div>
 
                     {/* Product Details */}
                     <div className="flex-1">
-                      <h3 className="font-bold text-lg mb-2">{item.name}</h3>
-                      <p className="text-primary font-bold text-xl mb-3">
+                      <h3 className="font-bold text-2xl mb-3">{item.name}</h3>
+                      <p className="text-primary font-bold text-2xl mb-4">
                         {item.price.toFixed(2)} ج.م
                       </p>
 
                       {/* Size and Color Selectors */}
                       {item.details && (
-                        <div className="grid grid-cols-2 gap-2 mb-3">
-                          {/* Parse size and color options from details */}
+                        <div className="grid grid-cols-2 gap-3 mb-4">
                           <div>
-                            <Label className="text-xs">المقاس</Label>
+                            <Label className="text-base font-semibold mb-2 block">المقاس</Label>
                             <Input
                               value={item.size || ""}
                               onChange={(e) => updateItemDetails(item.id, e.target.value, item.color)}
                               placeholder="المقاس"
-                              className="h-8"
+                              className="h-12 text-base"
                             />
                           </div>
                           <div>
-                            <Label className="text-xs">اللون</Label>
+                            <Label className="text-base font-semibold mb-2 block">اللون</Label>
                             <Input
                               value={item.color || ""}
                               onChange={(e) => updateItemDetails(item.id, item.size, e.target.value)}
                               placeholder="اللون"
-                              className="h-8"
+                              className="h-12 text-base"
                             />
                           </div>
                         </div>
                       )}
 
                       {/* Quantity Controls */}
-                      <div className="flex items-center gap-2 mt-4">
+                      <div className="flex items-center gap-3 mt-4">
                         <Button
                           variant="outline"
                           size="icon"
                           onClick={() => updateQuantity(item.id, item.quantity - 1)}
+                          className="h-12 w-12"
                         >
-                          <Minus className="h-4 w-4" />
+                          <Minus className="h-5 w-5" />
                         </Button>
-                        <span className="w-12 text-center font-bold">{item.quantity}</span>
+                        <span className="w-16 text-center font-bold text-xl">{item.quantity}</span>
                         <Button
                           variant="outline"
                           size="icon"
                           onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                          className="h-12 w-12"
                         >
-                          <Plus className="h-4 w-4" />
+                          <Plus className="h-5 w-5" />
                         </Button>
                         <Button
                           variant="destructive"
                           size="icon"
                           onClick={() => removeItem(item.id)}
-                          className="mr-auto"
+                          className="mr-auto h-12 w-12"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-5 w-5" />
                         </Button>
                       </div>
                     </div>
@@ -205,77 +210,82 @@ const Cart = () => {
 
           {/* Order Form */}
           <div className="lg:col-span-1">
-            <Card className="sticky top-4">
-              <CardHeader>
-                <CardTitle>معلومات التوصيل</CardTitle>
+            <Card className="sticky top-4 shadow-xl border-2">
+              <CardHeader className="bg-primary/5">
+                <CardTitle className="text-2xl">معلومات التوصيل</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-5 pt-6">
                 <div>
-                  <Label htmlFor="name">الاسم *</Label>
+                  <Label htmlFor="name" className="text-base font-semibold mb-2 block">الاسم *</Label>
                   <Input
                     id="name"
                     value={customerInfo.name}
                     onChange={(e) => setCustomerInfo({...customerInfo, name: e.target.value})}
                     placeholder="أدخل اسمك"
+                    className="h-12 text-base"
                   />
                 </div>
 
                 <div>
-                  <Label htmlFor="phone">رقم الهاتف *</Label>
+                  <Label htmlFor="phone" className="text-base font-semibold mb-2 block">رقم الهاتف *</Label>
                   <Input
                     id="phone"
                     value={customerInfo.phone}
                     onChange={(e) => setCustomerInfo({...customerInfo, phone: e.target.value})}
                     placeholder="01XXXXXXXXX"
+                    className="h-12 text-base"
                   />
                 </div>
 
                 <div>
-                  <Label htmlFor="governorate">المحافظة</Label>
+                  <Label htmlFor="governorate" className="text-base font-semibold mb-2 block">المحافظة</Label>
                   <Input
                     id="governorate"
                     value={customerInfo.governorate}
                     onChange={(e) => setCustomerInfo({...customerInfo, governorate: e.target.value})}
                     placeholder="القاهرة، الإسكندرية..."
+                    className="h-12 text-base"
                   />
                 </div>
 
                 <div>
-                  <Label htmlFor="address">العنوان بالتفصيل *</Label>
+                  <Label htmlFor="address" className="text-base font-semibold mb-2 block">العنوان بالتفصيل *</Label>
                   <Textarea
                     id="address"
                     value={customerInfo.address}
                     onChange={(e) => setCustomerInfo({...customerInfo, address: e.target.value})}
                     placeholder="الشارع، المنطقة، العمارة..."
                     rows={3}
+                    className="text-base"
                   />
                 </div>
 
                 <div>
-                  <Label htmlFor="notes">ملاحظات</Label>
+                  <Label htmlFor="notes" className="text-base font-semibold mb-2 block">ملاحظات</Label>
                   <Textarea
                     id="notes"
                     value={customerInfo.notes}
                     onChange={(e) => setCustomerInfo({...customerInfo, notes: e.target.value})}
                     placeholder="ملاحظات إضافية (اختياري)"
                     rows={2}
+                    className="text-base"
                   />
                 </div>
 
                 {/* Total */}
-                <div className="border-t pt-4">
-                  <div className="flex justify-between items-center text-xl font-bold">
+                <div className="border-t-2 pt-6 bg-primary/5 -mx-6 px-6 pb-2">
+                  <div className="flex justify-between items-center text-2xl font-bold">
                     <span>الإجمالي:</span>
                     <span className="text-primary">{getTotalPrice().toFixed(2)} ج.م</span>
                   </div>
                 </div>
               </CardContent>
 
-              <CardFooter>
+              <CardFooter className="pt-2">
                 <Button 
                   onClick={handleSubmitOrder} 
                   disabled={loading}
-                  className="w-full"
+                  className="w-full text-lg py-6"
                   size="lg"
                 >
                   {loading ? "جاري الإرسال..." : "تأكيد الطلب"}
