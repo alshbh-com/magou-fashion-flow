@@ -22,7 +22,8 @@ const Cart = () => {
     phone: "",
     address: "",
     governorate: "",
-    notes: ""
+    notes: "",
+    shippingCost: 0
   });
 
   const { data: products } = useQuery({
@@ -99,6 +100,7 @@ const Cart = () => {
         .insert({
           customer_id: customer.id,
           total_amount: getTotalPrice(),
+          shipping_cost: customerInfo.shippingCost,
           notes: customerInfo.notes,
           status: "pending"
         })
@@ -134,7 +136,8 @@ const Cart = () => {
         phone: "",
         address: "",
         governorate: "",
-        notes: ""
+        notes: "",
+        shippingCost: 0
       });
       
     } catch (error: any) {
@@ -204,21 +207,63 @@ const Cart = () => {
                         <div className="grid grid-cols-2 gap-3 mb-4">
                           <div>
                             <Label className="text-base font-semibold mb-2 block">المقاس</Label>
-                            <Input
-                              value={item.size || ""}
-                              onChange={(e) => updateItemDetails(item.id, e.target.value, item.color)}
-                              placeholder="المقاس"
-                              className="h-12 text-base"
-                            />
+                            {(() => {
+                              const product = products?.find(p => p.id === item.id);
+                              return product?.size_options && product.size_options.length > 0 ? (
+                                <Select
+                                  value={item.size || ""}
+                                  onValueChange={(value) => updateItemDetails(item.id, value, item.color)}
+                                >
+                                  <SelectTrigger className="h-12">
+                                    <SelectValue placeholder="اختر المقاس" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {product.size_options.map((size) => (
+                                      <SelectItem key={size} value={size}>
+                                        {size}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <Input
+                                  value={item.size || ""}
+                                  onChange={(e) => updateItemDetails(item.id, e.target.value, item.color)}
+                                  placeholder="المقاس"
+                                  className="h-12 text-base"
+                                />
+                              );
+                            })()}
                           </div>
                           <div>
                             <Label className="text-base font-semibold mb-2 block">اللون</Label>
-                            <Input
-                              value={item.color || ""}
-                              onChange={(e) => updateItemDetails(item.id, item.size, e.target.value)}
-                              placeholder="اللون"
-                              className="h-12 text-base"
-                            />
+                            {(() => {
+                              const product = products?.find(p => p.id === item.id);
+                              return product?.color_options && product.color_options.length > 0 ? (
+                                <Select
+                                  value={item.color || ""}
+                                  onValueChange={(value) => updateItemDetails(item.id, item.size, value)}
+                                >
+                                  <SelectTrigger className="h-12">
+                                    <SelectValue placeholder="اختر اللون" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {product.color_options.map((color) => (
+                                      <SelectItem key={color} value={color}>
+                                        {color}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <Input
+                                  value={item.color || ""}
+                                  onChange={(e) => updateItemDetails(item.id, item.size, e.target.value)}
+                                  placeholder="اللون"
+                                  className="h-12 text-base"
+                                />
+                              );
+                            })()}
                           </div>
                         </div>
                       )}
@@ -322,11 +367,34 @@ const Cart = () => {
                   />
                 </div>
 
+                <div>
+                  <Label htmlFor="shipping" className="text-base font-semibold mb-2 block">شحن العميل</Label>
+                  <Input
+                    id="shipping"
+                    type="number"
+                    value={customerInfo.shippingCost}
+                    onChange={(e) => setCustomerInfo({...customerInfo, shippingCost: Number(e.target.value) || 0})}
+                    placeholder="0"
+                    min="0"
+                    className="h-12 text-base"
+                  />
+                </div>
+
                 {/* Total */}
                 <div className="border-t-2 pt-6 bg-primary/5 -mx-6 px-6 pb-2">
-                  <div className="flex justify-between items-center text-2xl font-bold">
-                    <span>الإجمالي:</span>
-                    <span className="text-primary">{getTotalPrice().toFixed(2)} ج.م</span>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center text-lg">
+                      <span>المنتجات:</span>
+                      <span>{getTotalPrice().toFixed(2)} ج.م</span>
+                    </div>
+                    <div className="flex justify-between items-center text-lg">
+                      <span>الشحن:</span>
+                      <span>{customerInfo.shippingCost.toFixed(2)} ج.م</span>
+                    </div>
+                    <div className="flex justify-between items-center text-2xl font-bold border-t pt-2">
+                      <span>الإجمالي:</span>
+                      <span className="text-primary">{(getTotalPrice() + customerInfo.shippingCost).toFixed(2)} ج.م</span>
+                    </div>
                   </div>
                 </div>
               </CardContent>

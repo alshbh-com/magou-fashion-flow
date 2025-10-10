@@ -1,14 +1,17 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { ArrowLeft, Package } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 const Returns = () => {
   const navigate = useNavigate();
+  const [dateFilter, setDateFilter] = useState<string>("");
 
   const { data: returns, isLoading } = useQuery({
     queryKey: ["returns"],
@@ -28,6 +31,14 @@ const Returns = () => {
     },
   });
 
+  const filteredReturns = returns?.filter(returnItem => {
+    if (dateFilter) {
+      const returnDate = new Date(returnItem.created_at).toISOString().split('T')[0];
+      if (returnDate !== dateFilter) return false;
+    }
+    return true;
+  });
+
   if (isLoading) {
     return <div className="p-8">جاري التحميل...</div>;
   }
@@ -42,13 +53,30 @@ const Returns = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Package className="h-5 w-5" />
-              المرتجعات
-            </CardTitle>
+            <div className="space-y-4">
+              <CardTitle className="flex items-center gap-2">
+                <Package className="h-5 w-5" />
+                المرتجعات
+              </CardTitle>
+              
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">فلتر حسب التاريخ:</span>
+                <Input
+                  type="date"
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                  className="w-48"
+                />
+                {dateFilter && (
+                  <Button size="sm" variant="ghost" onClick={() => setDateFilter("")}>
+                    إلغاء
+                  </Button>
+                )}
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
-            {!returns || returns.length === 0 ? (
+            {!filteredReturns || filteredReturns.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">لا توجد مرتجعات</p>
             ) : (
               <div className="overflow-x-auto">
@@ -68,7 +96,7 @@ const Returns = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {returns.map((returnItem) => {
+                    {filteredReturns.map((returnItem) => {
                       const returnedItems = returnItem.returned_items as any[];
                       return (
                         <TableRow key={returnItem.id}>
@@ -123,9 +151,9 @@ const Returns = () => {
                 {/* Summary */}
                 <div className="mt-6 p-4 bg-accent rounded-lg">
                   <h3 className="font-bold mb-2">ملخص المرتجعات</h3>
-                  <p>عدد المرتجعات: {returns.length}</p>
+                  <p>عدد المرتجعات: {filteredReturns.length}</p>
                   <p className="font-bold text-lg text-destructive">
-                    إجمالي قيمة المرتجعات: {returns.reduce((sum, item) => sum + parseFloat(item.return_amount.toString()), 0).toFixed(2)} ج.م
+                    إجمالي قيمة المرتجعات: {filteredReturns.reduce((sum, item) => sum + parseFloat(item.return_amount.toString()), 0).toFixed(2)} ج.م
                   </p>
                 </div>
               </div>

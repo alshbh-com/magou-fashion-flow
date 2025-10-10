@@ -17,6 +17,7 @@ import Statistics from "./pages/admin/Statistics";
 import Invoices from "./pages/admin/Invoices";
 import Returns from "./pages/admin/Returns";
 import BottomNav from "./components/BottomNav";
+import TopNav from "./components/TopNav";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -27,7 +28,8 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <div className="pb-16">
+        <TopNav />
+        <div className="pb-16 pt-16">
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/cart" element={<Cart />} />

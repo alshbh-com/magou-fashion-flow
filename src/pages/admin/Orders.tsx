@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { ArrowLeft, Eye, UserCheck, Trash2, Edit, FileDown, Printer } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -21,7 +22,9 @@ const Orders = () => {
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [bulkAgentId, setBulkAgentId] = useState<string>("");
+  const [bulkShippingCost, setBulkShippingCost] = useState<number>(0);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [dateFilter, setDateFilter] = useState<string>("");
 
   const { data: orders, isLoading } = useQuery({
     queryKey: ["orders"],
@@ -72,10 +75,13 @@ const Orders = () => {
   });
 
   const bulkAssignMutation = useMutation({
-    mutationFn: async ({ orderIds, agentId }: { orderIds: string[]; agentId: string }) => {
+    mutationFn: async ({ orderIds, agentId, shippingCost }: { orderIds: string[]; agentId: string; shippingCost: number }) => {
       const { error } = await supabase
         .from("orders")
-        .update({ delivery_agent_id: agentId })
+        .update({ 
+          delivery_agent_id: agentId,
+          shipping_cost: shippingCost 
+        })
         .in("id", orderIds);
       
       if (error) throw error;
@@ -85,6 +91,7 @@ const Orders = () => {
       toast.success("تم تعيين المندوب لجميع الأوردرات المحددة");
       setSelectedOrders([]);
       setBulkAgentId("");
+      setBulkShippingCost(0);
     },
   });
 
@@ -137,7 +144,11 @@ const Orders = () => {
       toast.error("يرجى اختيار أوردرات");
       return;
     }
-    bulkAssignMutation.mutate({ orderIds: selectedOrders, agentId: bulkAgentId });
+    if (bulkShippingCost < 0) {
+      toast.error("يرجى إدخال قيمة شحن صحيحة");
+      return;
+    }
+    bulkAssignMutation.mutate({ orderIds: selectedOrders, agentId: bulkAgentId, shippingCost: bulkShippingCost });
   };
 
   const handleExportExcel = () => {
@@ -225,8 +236,12 @@ const Orders = () => {
   };
 
   const filteredOrders = orders?.filter(order => {
-    if (statusFilter === "all") return true;
-    return order.status === statusFilter;
+    if (statusFilter !== "all" && order.status !== statusFilter) return false;
+    if (dateFilter) {
+      const orderDate = new Date(order.created_at).toISOString().split('T')[0];
+      if (orderDate !== dateFilter) return false;
+    }
+    return true;
   });
 
   if (isLoading) {
@@ -255,6 +270,14 @@ const Orders = () => {
                       <FileDown className="ml-2 h-4 w-4" />
                       تصدير Excel
                     </Button>
+                    <Input
+                      type="number"
+                      value={bulkShippingCost}
+                      onChange={(e) => setBulkShippingCost(Number(e.target.value) || 0)}
+                      placeholder="شحن المندوب"
+                      className="w-32"
+                      min="0"
+                    />
                     <Select value={bulkAgentId} onValueChange={setBulkAgentId}>
                       <SelectTrigger className="w-48">
                         <SelectValue placeholder="اختر مندوب" />
@@ -275,23 +298,39 @@ const Orders = () => {
                 )}
               </div>
               
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">فلتر حسب الحالة:</span>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-48">
-                    <SelectValue placeholder="جميع الحالات" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">جميع الحالات</SelectItem>
-                    <SelectItem value="pending">قيد الانتظار</SelectItem>
-                    <SelectItem value="processing">قيد التنفيذ</SelectItem>
-                    <SelectItem value="shipped">تم الشحن</SelectItem>
-                    <SelectItem value="delivered">تم التوصيل</SelectItem>
-                    <SelectItem value="cancelled">ملغي</SelectItem>
-                    <SelectItem value="returned">مرتجع</SelectItem>
-                    <SelectItem value="partially_returned">مرتجع جزئي</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="flex items-center gap-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">فلتر حسب الحالة:</span>
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="w-48">
+                      <SelectValue placeholder="جميع الحالات" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">جميع الحالات</SelectItem>
+                      <SelectItem value="pending">قيد الانتظار</SelectItem>
+                      <SelectItem value="processing">قيد التنفيذ</SelectItem>
+                      <SelectItem value="shipped">تم الشحن</SelectItem>
+                      <SelectItem value="delivered">تم التوصيل</SelectItem>
+                      <SelectItem value="cancelled">ملغي</SelectItem>
+                      <SelectItem value="returned">مرتجع</SelectItem>
+                      <SelectItem value="partially_returned">مرتجع جزئي</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">فلتر حسب التاريخ:</span>
+                  <Input
+                    type="date"
+                    value={dateFilter}
+                    onChange={(e) => setDateFilter(e.target.value)}
+                    className="w-48"
+                  />
+                  {dateFilter && (
+                    <Button size="sm" variant="ghost" onClick={() => setDateFilter("")}>
+                      إلغاء
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           </CardHeader>
@@ -331,7 +370,7 @@ const Orders = () => {
                           />
                         </TableCell>
                         <TableCell className="font-mono text-xs">
-                          {order.id.slice(0, 8)}...
+                          #{order.order_number || order.id.slice(0, 8)}
                         </TableCell>
                         <TableCell className="font-medium">
                           {order.customers?.name}
