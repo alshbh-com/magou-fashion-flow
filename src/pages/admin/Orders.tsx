@@ -8,13 +8,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Eye, UserCheck, Trash2, Edit, FileDown, Printer } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { ArrowLeft, UserCheck, Trash2, Printer } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import SearchBar from "@/components/admin/SearchBar";
-import * as XLSX from 'xlsx';
 
 const Orders = () => {
   const navigate = useNavigate();
@@ -25,6 +25,17 @@ const Orders = () => {
   const [bulkShippingCost, setBulkShippingCost] = useState<number>(0);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState<string>("");
+  const [governorateFilter, setGovernorateFilter] = useState<string>("all");
+  const [modificationDialogOpen, setModificationDialogOpen] = useState(false);
+  const [selectedModifyOrder, setSelectedModifyOrder] = useState<any>(null);
+  const [modifiedAmount, setModifiedAmount] = useState<number>(0);
+
+  const egyptGovernorates = [
+    "القاهرة", "الجيزة", "الإسكندرية", "الدقهلية", "الشرقية", "المنوفية", "القليوبية",
+    "البحيرة", "الغربية", "بني سويف", "الفيوم", "المنيا", "أسيوط", "سوهاج", "قنا",
+    "الأقصر", "أسوان", "البحر الأحمر", "الوادي الجديد", "مطروح", "شمال سيناء",
+    "جنوب سيناء", "بورسعيد", "دمياط", "الإسماعيلية", "السويس", "كفر الشيخ", "الأقصر"
+  ];
 
   const { data: orders, isLoading } = useQuery({
     queryKey: ["orders"],
@@ -119,6 +130,45 @@ const Orders = () => {
     },
   });
 
+  const modifyOrderMutation = useMutation({
+    mutationFn: async ({ orderId, modifiedAmount }: { orderId: string; modifiedAmount: number }) => {
+      const { error } = await supabase
+        .from("orders")
+        .update({ 
+          status: "delivered_with_modification",
+          modified_amount: modifiedAmount
+        })
+        .eq("id", orderId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      toast.success("تم تعديل الأوردر");
+      setModificationDialogOpen(false);
+      setSelectedModifyOrder(null);
+      setModifiedAmount(0);
+    },
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ orderId, status }: { orderId: string; status: any }) => {
+      if (status === "delivered_with_modification") {
+        return;
+      }
+      const { error } = await supabase
+        .from("orders")
+        .update({ status: status as any })
+        .eq("id", orderId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      toast.success("تم تحديث حالة الأوردر");
+    },
+  });
+
   const toggleOrderSelection = (orderId: string) => {
     setSelectedOrders(prev =>
       prev.includes(orderId)
@@ -149,31 +199,6 @@ const Orders = () => {
       return;
     }
     bulkAssignMutation.mutate({ orderIds: selectedOrders, agentId: bulkAgentId, shippingCost: bulkShippingCost });
-  };
-
-  const handleExportExcel = () => {
-    if (selectedOrders.length === 0) {
-      toast.error("يرجى اختيار أوردرات للتصدير");
-      return;
-    }
-
-    const selectedOrdersData = orders?.filter(o => selectedOrders.includes(o.id)) || [];
-    const exportData = selectedOrdersData.map(order => ({
-      'رقم الأوردر': order.id.slice(0, 8),
-      'اسم العميل': order.customers?.name,
-      'الهاتف': order.customers?.phone,
-      'العنوان': order.customers?.address,
-      'المحافظة': order.customers?.governorate || '-',
-      'الإجمالي': parseFloat(order.total_amount.toString()).toFixed(2),
-      'المندوب': order.delivery_agents?.name || '-',
-      'التاريخ': new Date(order.created_at).toLocaleDateString('ar-EG')
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Orders');
-    XLSX.writeFile(wb, `orders_${new Date().getTime()}.xlsx`);
-    toast.success("تم تصدير الأوردرات بنجاح");
   };
 
   const handlePrintOrder = (order: any) => {
@@ -241,6 +266,9 @@ const Orders = () => {
       const orderDate = new Date(order.created_at).toISOString().split('T')[0];
       if (orderDate !== dateFilter) return false;
     }
+    if (governorateFilter !== "all" && order.customers?.governorate !== governorateFilter) {
+      return false;
+    }
     return true;
   });
 
@@ -266,10 +294,6 @@ const Orders = () => {
                     <span className="text-sm text-muted-foreground">
                       {selectedOrders.length} محدد
                     </span>
-                    <Button onClick={handleExportExcel} size="sm" variant="outline">
-                      <FileDown className="ml-2 h-4 w-4" />
-                      تصدير Excel
-                    </Button>
                     <Input
                       type="number"
                       value={bulkShippingCost}
@@ -314,6 +338,7 @@ const Orders = () => {
                       <SelectItem value="cancelled">ملغي</SelectItem>
                       <SelectItem value="returned">مرتجع</SelectItem>
                       <SelectItem value="partially_returned">مرتجع جزئي</SelectItem>
+                      <SelectItem value="delivered_with_modification">تم التوصيل مع التعديل</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -330,6 +355,22 @@ const Orders = () => {
                       إلغاء
                     </Button>
                   )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">فلتر حسب المحافظة:</span>
+                  <Select value={governorateFilter} onValueChange={setGovernorateFilter}>
+                    <SelectTrigger className="w-48">
+                      <SelectValue placeholder="جميع المحافظات" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">جميع المحافظات</SelectItem>
+                      {egyptGovernorates.map((gov) => (
+                        <SelectItem key={gov} value={gov}>
+                          {gov}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             </div>
@@ -352,11 +393,14 @@ const Orders = () => {
                       <TableHead>رقم الأوردر</TableHead>
                       <TableHead>العميل</TableHead>
                       <TableHead>الهاتف</TableHead>
+                      <TableHead>العنوان</TableHead>
                       <TableHead>المحافظة</TableHead>
                       <TableHead>الإجمالي</TableHead>
+                      <TableHead>الخصم</TableHead>
+                      <TableHead>الصافي</TableHead>
                       <TableHead>المندوب</TableHead>
-                      <TableHead>تعيين المندوب</TableHead>
-                      <TableHead>تفاصيل</TableHead>
+                      <TableHead>الحالة</TableHead>
+                      <TableHead>التاريخ</TableHead>
                       <TableHead>إجراءات</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -372,10 +416,27 @@ const Orders = () => {
                         <TableCell className="font-mono text-xs">
                           #{order.order_number || order.id.slice(0, 8)}
                         </TableCell>
-                        <TableCell className="font-medium">
-                          {order.customers?.name}
+                        <TableCell>
+                          <div className="font-medium">{order.customers?.name}</div>
+                          {order.order_details && (
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {order.order_details}
+                            </div>
+                          )}
                         </TableCell>
-                        <TableCell>{order.customers?.phone}</TableCell>
+                        <TableCell>
+                          <div>{order.customers?.phone}</div>
+                          {(order.customers as any)?.phone2 && (
+                            <div className="text-xs text-muted-foreground">
+                              {(order.customers as any).phone2}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="max-w-xs">
+                          <div className="text-sm truncate" title={order.customers?.address}>
+                            {order.customers?.address}
+                          </div>
+                        </TableCell>
                         <TableCell>
                           <Badge variant="outline">
                             {order.customers?.governorate || "-"}
@@ -385,92 +446,53 @@ const Orders = () => {
                           {parseFloat(order.total_amount.toString()).toFixed(2)} ج.م
                         </TableCell>
                         <TableCell>
+                          {order.discount > 0 ? (
+                            <span className="text-green-600">
+                              {parseFloat(order.discount.toString()).toFixed(2)} ج.م
+                            </span>
+                          ) : "-"}
+                        </TableCell>
+                        <TableCell className="font-bold">
+                          {(parseFloat(order.total_amount.toString()) - (order.discount || 0)).toFixed(2)} ج.م
+                        </TableCell>
+                        <TableCell>
                           {order.delivery_agents ? (
                             <Badge variant="outline">
                               {order.delivery_agents.name}
                             </Badge>
                           ) : (
-                            <span className="text-muted-foreground">-</span>
+                            <span className="text-muted-foreground text-xs">غير محدد</span>
                           )}
                         </TableCell>
                         <TableCell>
                           <Select
-                            value={order.delivery_agent_id || ""}
-                            onValueChange={(value) =>
-                              assignAgentMutation.mutate({ orderId: order.id, agentId: value })
-                            }
+                            value={order.status}
+                            onValueChange={(value) => {
+                              if (value === "delivered_with_modification") {
+                                setSelectedModifyOrder(order);
+                                setModificationDialogOpen(true);
+                              } else {
+                                updateStatusMutation.mutate({ orderId: order.id, status: value });
+                              }
+                            }}
                           >
-                            <SelectTrigger className="w-36">
-                              <SelectValue placeholder="اختر مندوب" />
+                            <SelectTrigger className="w-40">
+                              <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              {agents?.map((agent) => (
-                                <SelectItem key={agent.id} value={agent.id}>
-                                  {agent.name}
-                                </SelectItem>
-                              ))}
+                              <SelectItem value="pending">قيد الانتظار</SelectItem>
+                              <SelectItem value="processing">قيد التنفيذ</SelectItem>
+                              <SelectItem value="shipped">تم الشحن</SelectItem>
+                              <SelectItem value="delivered">تم التوصيل</SelectItem>
+                              <SelectItem value="delivered_with_modification">تم التوصيل مع التعديل</SelectItem>
+                              <SelectItem value="cancelled">ملغي</SelectItem>
+                              <SelectItem value="returned">مرتجع</SelectItem>
+                              <SelectItem value="partially_returned">مرتجع جزئي</SelectItem>
                             </SelectContent>
                           </Select>
                         </TableCell>
-                        <TableCell>
-                          <Dialog>
-                            <DialogTrigger asChild>
-                              <Button variant="ghost" size="icon" onClick={() => setSelectedOrder(order)}>
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-                              <DialogHeader>
-                                <DialogTitle>تفاصيل الأوردر</DialogTitle>
-                              </DialogHeader>
-                              {selectedOrder && selectedOrder.id === order.id && (
-                                <div className="space-y-4">
-                                  <div>
-                                    <h3 className="font-bold mb-2">معلومات العميل</h3>
-                                    <p>الاسم: {order.customers?.name}</p>
-                                    <p>الهاتف: {order.customers?.phone}</p>
-                                    <p>المحافظة: {order.customers?.governorate || "-"}</p>
-                                    <p>العنوان: {order.customers?.address}</p>
-                                  </div>
-                                  <div>
-                                    <h3 className="font-bold mb-2">المنتجات</h3>
-                                    <Table>
-                                      <TableHeader>
-                                        <TableRow>
-                                          <TableHead>المنتج</TableHead>
-                                          <TableHead>الكمية</TableHead>
-                                          <TableHead>السعر</TableHead>
-                                          <TableHead>الإجمالي</TableHead>
-                                        </TableRow>
-                                      </TableHeader>
-                                      <TableBody>
-                                        {order.order_items?.map((item: any) => (
-                                          <TableRow key={item.id}>
-                                            <TableCell>
-                                              {item.products?.name}
-                                              {item.size && <div className="text-xs text-muted-foreground">المقاس: {item.size}</div>}
-                                              {item.color && <div className="text-xs text-muted-foreground">اللون: {item.color}</div>}
-                                            </TableCell>
-                                            <TableCell>{item.quantity}</TableCell>
-                                            <TableCell>{parseFloat(item.price.toString()).toFixed(2)} ج.م</TableCell>
-                                            <TableCell>
-                                              {(parseFloat(item.price.toString()) * item.quantity).toFixed(2)} ج.م
-                                            </TableCell>
-                                          </TableRow>
-                                        ))}
-                                      </TableBody>
-                                    </Table>
-                                  </div>
-                                  {order.notes && (
-                                    <div>
-                                      <h3 className="font-bold mb-2">ملاحظات</h3>
-                                      <p>{order.notes}</p>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </DialogContent>
-                          </Dialog>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {new Date(order.created_at).toLocaleDateString('ar-EG')}
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-2">
@@ -516,6 +538,57 @@ const Orders = () => {
             )}
           </CardContent>
         </Card>
+
+        {/* Modification Dialog */}
+        <Dialog open={modificationDialogOpen} onOpenChange={setModificationDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>تعديل الأوردر</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                أدخل المبلغ المعدل للأوردر رقم #{selectedModifyOrder?.order_number || selectedModifyOrder?.id.slice(0, 8)}
+              </p>
+              <div>
+                <Label htmlFor="modifiedAmount">المبلغ المعدل (ج.م)</Label>
+                <Input
+                  id="modifiedAmount"
+                  type="number"
+                  value={modifiedAmount || ""}
+                  onChange={(e) => setModifiedAmount(Number(e.target.value) || 0)}
+                  placeholder="أدخل المبلغ الجديد"
+                  min="0"
+                />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setModificationDialogOpen(false);
+                    setSelectedModifyOrder(null);
+                    setModifiedAmount(0);
+                  }}
+                >
+                  إلغاء
+                </Button>
+                <Button 
+                  onClick={() => {
+                    if (selectedModifyOrder && modifiedAmount > 0) {
+                      modifyOrderMutation.mutate({
+                        orderId: selectedModifyOrder.id,
+                        modifiedAmount
+                      });
+                    } else {
+                      toast.error("يرجى إدخال مبلغ صحيح");
+                    }
+                  }}
+                >
+                  تأكيد
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

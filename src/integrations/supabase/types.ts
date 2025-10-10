@@ -67,6 +67,7 @@ export type Database = {
           id: string
           name: string
           phone: string
+          phone2: string | null
         }
         Insert: {
           address: string
@@ -75,6 +76,7 @@ export type Database = {
           id?: string
           name: string
           phone: string
+          phone2?: string | null
         }
         Update: {
           address?: string
@@ -83,6 +85,7 @@ export type Database = {
           id?: string
           name?: string
           phone?: string
+          phone2?: string | null
         }
         Relationships: []
       }
@@ -172,8 +175,11 @@ export type Database = {
           created_at: string | null
           customer_id: string | null
           delivery_agent_id: string | null
+          discount: number | null
           id: string
+          modified_amount: number | null
           notes: string | null
+          order_details: string | null
           order_number: number | null
           shipping_cost: number | null
           status: Database["public"]["Enums"]["order_status"] | null
@@ -184,8 +190,11 @@ export type Database = {
           created_at?: string | null
           customer_id?: string | null
           delivery_agent_id?: string | null
+          discount?: number | null
           id?: string
+          modified_amount?: number | null
           notes?: string | null
+          order_details?: string | null
           order_number?: number | null
           shipping_cost?: number | null
           status?: Database["public"]["Enums"]["order_status"] | null
@@ -196,8 +205,11 @@ export type Database = {
           created_at?: string | null
           customer_id?: string | null
           delivery_agent_id?: string | null
+          discount?: number | null
           id?: string
+          modified_amount?: number | null
           notes?: string | null
+          order_details?: string | null
           order_number?: number | null
           shipping_cost?: number | null
           status?: Database["public"]["Enums"]["order_status"] | null
@@ -367,6 +379,7 @@ export type Database = {
         | "cancelled"
         | "returned"
         | "partially_returned"
+        | "delivered_with_modification"
       payment_status: "pending" | "partial" | "paid"
     }
     CompositeTypes: {
@@ -503,6 +516,7 @@ export const Constants = {
         "cancelled",
         "returned",
         "partially_returned",
+        "delivered_with_modification",
       ],
       payment_status: ["pending", "partial", "paid"],
     },

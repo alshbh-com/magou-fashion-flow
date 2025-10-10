@@ -17,13 +17,23 @@ const Cart = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   
+  const egyptGovernorates = [
+    "القاهرة", "الجيزة", "الإسكندرية", "الدقهلية", "الشرقية", "المنوفية", "القليوبية",
+    "البحيرة", "الغربية", "بني سويف", "الفيوم", "المنيا", "أسيوط", "سوهاج", "قنا",
+    "الأقصر", "أسوان", "البحر الأحمر", "الوادي الجديد", "مطروح", "شمال سيناء",
+    "جنوب سيناء", "بورسعيد", "دمياط", "الإسماعيلية", "السويس", "كفر الشيخ", "الأقصر"
+  ];
+
   const [customerInfo, setCustomerInfo] = useState({
     name: "",
     phone: "",
+    phone2: "",
     address: "",
     governorate: "",
     notes: "",
-    shippingCost: 0
+    shippingCost: 0,
+    discount: 0,
+    orderDetails: ""
   });
 
   const { data: products } = useQuery({
@@ -62,10 +72,11 @@ const Cart = () => {
   };
 
   const getTotalPrice = () => {
-    return items.reduce((sum, item) => {
+    const itemsTotal = items.reduce((sum, item) => {
       const price = getProductPrice(item.id, item.quantity);
       return sum + (price * item.quantity);
     }, 0);
+    return itemsTotal - customerInfo.discount;
   };
 
   const handleSubmitOrder = async () => {
@@ -87,6 +98,7 @@ const Cart = () => {
         .insert({
           name: customerInfo.name,
           phone: customerInfo.phone,
+          phone2: customerInfo.phone2 || null,
           address: customerInfo.address,
           governorate: customerInfo.governorate
         })
@@ -99,8 +111,10 @@ const Cart = () => {
         .from("orders")
         .insert({
           customer_id: customer.id,
-          total_amount: getTotalPrice(),
+          total_amount: getTotalPrice() + customerInfo.shippingCost,
           shipping_cost: customerInfo.shippingCost,
+          discount: customerInfo.discount,
+          order_details: customerInfo.orderDetails || null,
           notes: customerInfo.notes,
           status: "pending"
         })
@@ -134,10 +148,13 @@ const Cart = () => {
       setCustomerInfo({
         name: "",
         phone: "",
+        phone2: "",
         address: "",
         governorate: "",
         notes: "",
-        shippingCost: 0
+        shippingCost: 0,
+        discount: 0,
+        orderDetails: ""
       });
       
     } catch (error: any) {
@@ -333,14 +350,33 @@ const Cart = () => {
                 </div>
 
                 <div>
-                  <Label htmlFor="governorate" className="text-base font-semibold mb-2 block">المحافظة</Label>
+                  <Label htmlFor="phone2" className="text-base font-semibold mb-2 block">رقم هاتف إضافي (اختياري)</Label>
                   <Input
-                    id="governorate"
-                    value={customerInfo.governorate}
-                    onChange={(e) => setCustomerInfo({...customerInfo, governorate: e.target.value})}
-                    placeholder="القاهرة، الإسكندرية..."
+                    id="phone2"
+                    value={customerInfo.phone2}
+                    onChange={(e) => setCustomerInfo({...customerInfo, phone2: e.target.value})}
+                    placeholder="01XXXXXXXXX"
                     className="h-12 text-base"
                   />
+                </div>
+
+                <div>
+                  <Label htmlFor="governorate" className="text-base font-semibold mb-2 block">المحافظة *</Label>
+                  <Select
+                    value={customerInfo.governorate}
+                    onValueChange={(value) => setCustomerInfo({...customerInfo, governorate: value})}
+                  >
+                    <SelectTrigger className="h-12">
+                      <SelectValue placeholder="اختر المحافظة" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {egyptGovernorates.map((gov) => (
+                        <SelectItem key={gov} value={gov}>
+                          {gov}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div>
@@ -351,6 +387,18 @@ const Cart = () => {
                     onChange={(e) => setCustomerInfo({...customerInfo, address: e.target.value})}
                     placeholder="الشارع، المنطقة، العمارة..."
                     rows={3}
+                    className="text-base"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="orderDetails" className="text-base font-semibold mb-2 block">تفاصيل الأوردر (اختياري)</Label>
+                  <Textarea
+                    id="orderDetails"
+                    value={customerInfo.orderDetails}
+                    onChange={(e) => setCustomerInfo({...customerInfo, orderDetails: e.target.value})}
+                    placeholder="أي تفاصيل خاصة بالأوردر..."
+                    rows={2}
                     className="text-base"
                   />
                 </div>
@@ -368,13 +416,26 @@ const Cart = () => {
                 </div>
 
                 <div>
-                  <Label htmlFor="shipping" className="text-base font-semibold mb-2 block">شحن العميل</Label>
+                  <Label htmlFor="discount" className="text-base font-semibold mb-2 block">الخصم (اختياري)</Label>
+                  <Input
+                    id="discount"
+                    type="number"
+                    value={customerInfo.discount || ""}
+                    onChange={(e) => setCustomerInfo({...customerInfo, discount: Number(e.target.value) || 0})}
+                    placeholder="مثال: 50"
+                    min="0"
+                    className="h-12 text-base"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="shipping" className="text-base font-semibold mb-2 block">شحن العميل (اختياري)</Label>
                   <Input
                     id="shipping"
                     type="number"
-                    value={customerInfo.shippingCost}
+                    value={customerInfo.shippingCost || ""}
                     onChange={(e) => setCustomerInfo({...customerInfo, shippingCost: Number(e.target.value) || 0})}
-                    placeholder="0"
+                    placeholder="مثال: 30"
                     min="0"
                     className="h-12 text-base"
                   />
@@ -385,12 +446,20 @@ const Cart = () => {
                   <div className="space-y-2">
                     <div className="flex justify-between items-center text-lg">
                       <span>المنتجات:</span>
-                      <span>{getTotalPrice().toFixed(2)} ج.م</span>
+                      <span>{items.reduce((sum, item) => sum + (getProductPrice(item.id, item.quantity) * item.quantity), 0).toFixed(2)} ج.م</span>
                     </div>
-                    <div className="flex justify-between items-center text-lg">
-                      <span>الشحن:</span>
-                      <span>{customerInfo.shippingCost.toFixed(2)} ج.م</span>
-                    </div>
+                    {customerInfo.discount > 0 && (
+                      <div className="flex justify-between items-center text-lg text-green-600">
+                        <span>الخصم:</span>
+                        <span>- {customerInfo.discount.toFixed(2)} ج.م</span>
+                      </div>
+                    )}
+                    {customerInfo.shippingCost > 0 && (
+                      <div className="flex justify-between items-center text-lg">
+                        <span>الشحن:</span>
+                        <span>{customerInfo.shippingCost.toFixed(2)} ج.م</span>
+                      </div>
+                    )}
                     <div className="flex justify-between items-center text-2xl font-bold border-t pt-2">
                       <span>الإجمالي:</span>
                       <span className="text-primary">{(getTotalPrice() + customerInfo.shippingCost).toFixed(2)} ج.م</span>
