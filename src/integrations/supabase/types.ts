@@ -174,6 +174,7 @@ export type Database = {
           delivery_agent_id: string | null
           id: string
           notes: string | null
+          order_number: number | null
           shipping_cost: number | null
           status: Database["public"]["Enums"]["order_status"] | null
           total_amount: number
@@ -185,6 +186,7 @@ export type Database = {
           delivery_agent_id?: string | null
           id?: string
           notes?: string | null
+          order_number?: number | null
           shipping_cost?: number | null
           status?: Database["public"]["Enums"]["order_status"] | null
           total_amount: number
@@ -196,6 +198,7 @@ export type Database = {
           delivery_agent_id?: string | null
           id?: string
           notes?: string | null
+          order_number?: number | null
           shipping_cost?: number | null
           status?: Database["public"]["Enums"]["order_status"] | null
           total_amount?: number
