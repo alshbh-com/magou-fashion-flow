@@ -9,12 +9,12 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { checkAdminAuth } from "@/lib/adminAuth";
+import { isAdminAuthenticated } from "@/lib/adminAuth";
 
 const TopNav = () => {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const isAdmin = checkAdminAuth("admin123");
+  const isAdmin = isAdminAuthenticated();
 
   const publicMenuItems = [
     { title: "الرئيسية", icon: Home, path: "/" },
