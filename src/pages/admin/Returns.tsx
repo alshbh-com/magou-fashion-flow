@@ -8,10 +8,19 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft, Package } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const Returns = () => {
   const navigate = useNavigate();
   const [dateFilter, setDateFilter] = useState<string>("");
+  const [governorateFilter, setGovernorateFilter] = useState<string>("all");
+
+  const egyptGovernorates = [
+    "القاهرة", "الجيزة", "الإسكندرية", "الدقهلية", "الشرقية", "المنوفية", "القليوبية",
+    "البحيرة", "الغربية", "بني سويف", "الفيوم", "المنيا", "أسيوط", "سوهاج", "قنا",
+    "الأقصر", "أسوان", "البحر الأحمر", "الوادي الجديد", "مطروح", "شمال سيناء",
+    "جنوب سيناء", "بورسعيد", "دمياط", "الإسماعيلية", "السويس", "كفر الشيخ", "الأقصر"
+  ];
 
   const { data: returns, isLoading } = useQuery({
     queryKey: ["returns"],
@@ -36,6 +45,9 @@ const Returns = () => {
       const returnDate = new Date(returnItem.created_at).toISOString().split('T')[0];
       if (returnDate !== dateFilter) return false;
     }
+    if (governorateFilter !== "all" && returnItem.customers?.governorate !== governorateFilter) {
+      return false;
+    }
     return true;
   });
 
@@ -59,19 +71,37 @@ const Returns = () => {
                 المرتجعات
               </CardTitle>
               
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">فلتر حسب التاريخ:</span>
-                <Input
-                  type="date"
-                  value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
-                  className="w-48"
-                />
-                {dateFilter && (
-                  <Button size="sm" variant="ghost" onClick={() => setDateFilter("")}>
-                    إلغاء
-                  </Button>
-                )}
+              <div className="flex items-center gap-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">فلتر حسب التاريخ:</span>
+                  <Input
+                    type="date"
+                    value={dateFilter}
+                    onChange={(e) => setDateFilter(e.target.value)}
+                    className="w-48"
+                  />
+                  {dateFilter && (
+                    <Button size="sm" variant="ghost" onClick={() => setDateFilter("")}>
+                      إلغاء
+                    </Button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">فلتر حسب المحافظة:</span>
+                  <Select value={governorateFilter} onValueChange={setGovernorateFilter}>
+                    <SelectTrigger className="w-48">
+                      <SelectValue placeholder="جميع المحافظات" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">جميع المحافظات</SelectItem>
+                      {egyptGovernorates.map((gov) => (
+                        <SelectItem key={gov} value={gov}>
+                          {gov}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
             </div>
           </CardHeader>

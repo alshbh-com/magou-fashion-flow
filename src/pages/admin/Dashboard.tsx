@@ -67,6 +67,13 @@ const adminSections = [
     color: "text-orange-600"
   },
   {
+    title: "الأوردرات المعدلة",
+    description: "الأوردرات التي تم توصيلها مع تعديل",
+    icon: Package,
+    path: "/admin/modified-orders",
+    color: "text-indigo-500"
+  },
+  {
     title: "الإحصائيات",
     description: "إحصائيات المبيعات",
     icon: BarChart,

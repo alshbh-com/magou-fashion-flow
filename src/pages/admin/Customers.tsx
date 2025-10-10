@@ -8,10 +8,20 @@ import { Trash2, ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import SearchBar from "@/components/admin/SearchBar";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useState } from "react";
 
 const Customers = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [governorateFilter, setGovernorateFilter] = useState<string>("all");
+
+  const egyptGovernorates = [
+    "القاهرة", "الجيزة", "الإسكندرية", "الدقهلية", "الشرقية", "المنوفية", "القليوبية",
+    "البحيرة", "الغربية", "بني سويف", "الفيوم", "المنيا", "أسيوط", "سوهاج", "قنا",
+    "الأقصر", "أسوان", "البحر الأحمر", "الوادي الجديد", "مطروح", "شمال سيناء",
+    "جنوب سيناء", "بورسعيد", "دمياط", "الإسماعيلية", "السويس", "كفر الشيخ", "الأقصر"
+  ];
 
   const { data: customers, isLoading } = useQuery({
     queryKey: ["customers"],
@@ -44,6 +54,13 @@ const Customers = () => {
     }
   });
 
+  const filteredCustomers = customers?.filter(customer => {
+    if (governorateFilter !== "all" && customer.governorate !== governorateFilter) {
+      return false;
+    }
+    return true;
+  });
+
   if (isLoading) {
     return <div className="p-8">جاري التحميل...</div>;
   }
@@ -58,11 +75,29 @@ const Customers = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle>العملاء</CardTitle>
+            <div className="space-y-4">
+              <CardTitle>العملاء</CardTitle>
+              <div className="flex items-center gap-4">
+                <span className="text-sm font-medium">فلتر حسب المحافظة:</span>
+                <Select value={governorateFilter} onValueChange={setGovernorateFilter}>
+                  <SelectTrigger className="w-48">
+                    <SelectValue placeholder="جميع المحافظات" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">جميع المحافظات</SelectItem>
+                    {egyptGovernorates.map((gov) => (
+                      <SelectItem key={gov} value={gov}>
+                        {gov}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <SearchBar />
-            {!customers || customers.length === 0 ? (
+            {!filteredCustomers || filteredCustomers.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">لا يوجد عملاء</p>
             ) : (
               <div className="overflow-x-auto">
@@ -78,7 +113,7 @@ const Customers = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {customers.map((customer) => (
+                    {filteredCustomers.map((customer) => (
                       <TableRow key={customer.id}>
                         <TableCell className="font-medium">{customer.name}</TableCell>
                         <TableCell>{customer.phone}</TableCell>

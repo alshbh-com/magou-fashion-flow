@@ -3,9 +3,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ArrowLeft, Printer } from "lucide-react";
+import { ArrowLeft, Printer, FileSpreadsheet } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
+import * as XLSX from "xlsx";
 
 const Invoices = () => {
   const navigate = useNavigate();
@@ -16,12 +17,40 @@ const Invoices = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("orders")
-        .select(`*, customers (name, phone, address), order_items (*, products (name))`)
+        .select(`
+          *,
+          customers (name, phone, address, governorate),
+          delivery_agents (name, serial_number),
+          order_items (*, products (name))
+        `)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data;
     },
   });
+
+  const handleExportExcel = () => {
+    if (!orders?.length) return;
+    
+    const exportData = orders.map(order => ({
+      "رقم الأوردر": order.order_number || order.id.slice(0, 8),
+      "اسم العميل": order.customers?.name || "-",
+      "الهاتف": order.customers?.phone || "-",
+      "العنوان": order.customers?.address || "-",
+      "المحافظة": order.customers?.governorate || "-",
+      "المندوب": order.delivery_agents?.name || "-",
+      "الحالة": order.status,
+      "الإجمالي": parseFloat(order.total_amount.toString()).toFixed(2),
+      "شحن العميل": parseFloat((order.shipping_cost || 0).toString()).toFixed(2),
+      "الخصم": parseFloat((order.discount || 0).toString()).toFixed(2),
+      "التاريخ": new Date(order.created_at).toLocaleDateString("ar-EG")
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "الأوردرات");
+    XLSX.writeFile(wb, `orders_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
 
   const handlePrint = () => {
     const ordersToPrint = orders?.filter(o => selectedOrders.includes(o.id));
@@ -34,7 +63,7 @@ const Invoices = () => {
       <div style="width: 148mm; height: 210mm; padding: 10mm; page-break-after: always; font-family: Arial;">
         <h2 style="text-align: center;">Magou Fashion</h2>
         <hr/>
-        <p><strong>رقم الأوردر:</strong> ${order.id.slice(0, 8)}</p>
+        <p><strong>رقم الأوردر:</strong> ${order.order_number || order.id.slice(0, 8)}</p>
         <p><strong>العميل:</strong> ${order.customers?.name}</p>
         <p><strong>الهاتف:</strong> ${order.customers?.phone}</p>
         <p><strong>العنوان:</strong> ${order.customers?.address}</p>
@@ -67,10 +96,16 @@ const Invoices = () => {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>الفواتير</CardTitle>
-            <Button onClick={handlePrint} disabled={selectedOrders.length === 0}>
-              <Printer className="ml-2 h-4 w-4" />
-              طباعة ({selectedOrders.length})
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={handleExportExcel}>
+                <FileSpreadsheet className="ml-2 h-4 w-4" />
+                تصدير Excel
+              </Button>
+              <Button onClick={handlePrint} disabled={selectedOrders.length === 0}>
+                <Printer className="ml-2 h-4 w-4" />
+                طباعة ({selectedOrders.length})
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
