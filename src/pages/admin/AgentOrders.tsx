@@ -318,48 +318,53 @@ const AgentOrders = () => {
               <p className="text-center text-muted-foreground py-8">لا توجد أوردرات لهذا المندوب</p>
             ) : (
               <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>رقم الأوردر</TableHead>
-                      <TableHead>العميل</TableHead>
-                      <TableHead>الهاتف</TableHead>
-                      <TableHead>العنوان</TableHead>
-                      <TableHead>الإجمالي</TableHead>
-                      <TableHead>شحن المندوب</TableHead>
-                      <TableHead>الصافي</TableHead>
-                      <TableHead>الحالة</TableHead>
-                      <TableHead>التاريخ</TableHead>
-                      <TableHead>إجراءات</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredOrders.map((order) => {
-                      const shippingCost = parseFloat(order.shipping_cost?.toString() || "0");
-                      const totalAmount = parseFloat(order.total_amount.toString());
-                      const netAmount = totalAmount - shippingCost;
-                      
-                      return (
-                        <TableRow key={order.id}>
-                          <TableCell className="font-mono text-xs">
-                            #{order.order_number || order.id.slice(0, 8)}
-                          </TableCell>
-                          <TableCell className="font-medium">
-                            {order.customers?.name}
-                          </TableCell>
-                          <TableCell>{order.customers?.phone}</TableCell>
-                          <TableCell className="max-w-xs truncate">
-                            {order.customers?.address}
-                          </TableCell>
-                          <TableCell className="font-bold">
-                            {totalAmount.toFixed(2)} ج.م
-                          </TableCell>
-                          <TableCell className="text-orange-600 font-semibold">
-                            {shippingCost.toFixed(2)} ج.م
-                          </TableCell>
-                          <TableCell className="text-green-600 font-bold">
-                            {netAmount.toFixed(2)} ج.م
-                          </TableCell>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>رقم الأوردر</TableHead>
+                        <TableHead>العميل</TableHead>
+                        <TableHead>الهاتف</TableHead>
+                        <TableHead>العنوان</TableHead>
+                        <TableHead>الإجمالي</TableHead>
+                        <TableHead>الخصم</TableHead>
+                        <TableHead>شحن المندوب</TableHead>
+                        <TableHead>الصافي</TableHead>
+                        <TableHead>الحالة</TableHead>
+                        <TableHead>التاريخ</TableHead>
+                        <TableHead>إجراءات</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredOrders.map((order) => {
+                        const shippingCost = parseFloat(order.shipping_cost?.toString() || "0");
+                        const totalAmount = parseFloat(order.total_amount.toString());
+                        const discount = parseFloat(order.discount?.toString() || "0");
+                        const netAmount = totalAmount + shippingCost;
+                        
+                        return (
+                          <TableRow key={order.id}>
+                            <TableCell className="font-mono text-xs">
+                              #{order.order_number || order.id.slice(0, 8)}
+                            </TableCell>
+                            <TableCell className="font-medium">
+                              {order.customers?.name}
+                            </TableCell>
+                            <TableCell>{order.customers?.phone}</TableCell>
+                            <TableCell className="max-w-xs truncate">
+                              {order.customers?.address}
+                            </TableCell>
+                            <TableCell className="font-bold">
+                              {totalAmount.toFixed(2)} ج.م
+                            </TableCell>
+                            <TableCell className="text-red-600 font-semibold">
+                              {discount.toFixed(2)} ج.م
+                            </TableCell>
+                            <TableCell className="text-orange-600 font-semibold">
+                              {shippingCost.toFixed(2)} ج.م
+                            </TableCell>
+                            <TableCell className="text-green-600 font-bold">
+                              {netAmount.toFixed(2)} ج.م
+                            </TableCell>
                         <TableCell>
                           <Select
                             value={order.status}
@@ -416,16 +421,19 @@ const AgentOrders = () => {
                   <h3 className="font-bold mb-2">ملخص الأوردرات</h3>
                   <p>عدد الأوردرات: {filteredOrders.length}</p>
                   <p className="font-bold text-lg">
-                    الإجمالي مع الشحن: {filteredOrders.reduce((sum, order) => sum + parseFloat(order.total_amount.toString()), 0).toFixed(2)} ج.م
+                    الإجمالي: {filteredOrders.reduce((sum, order) => sum + parseFloat(order.total_amount.toString()), 0).toFixed(2)} ج.م
+                  </p>
+                  <p className="font-bold text-lg text-red-600">
+                    الخصومات: {filteredOrders.reduce((sum, order) => sum + parseFloat(order.discount?.toString() || "0"), 0).toFixed(2)} ج.م
                   </p>
                   <p className="font-bold text-lg text-orange-600">
                     مصاريف الشحن: {filteredOrders.reduce((sum, order) => sum + parseFloat(order.shipping_cost?.toString() || "0"), 0).toFixed(2)} ج.م
                   </p>
                   <p className="font-bold text-xl text-green-600">
-                    الصافي: {filteredOrders.reduce((sum, order) => {
+                    الصافي المطلوب من المندوب: {filteredOrders.reduce((sum, order) => {
                       const total = parseFloat(order.total_amount.toString());
                       const shipping = parseFloat(order.shipping_cost?.toString() || "0");
-                      return sum + (total - shipping);
+                      return sum + (total + shipping);
                     }, 0).toFixed(2)} ج.م
                   </p>
                 </div>

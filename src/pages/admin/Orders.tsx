@@ -91,7 +91,8 @@ const Orders = () => {
         .from("orders")
         .update({ 
           delivery_agent_id: agentId,
-          shipping_cost: shippingCost 
+          shipping_cost: shippingCost,
+          status: 'shipped'
         })
         .in("id", orderIds);
       
@@ -99,7 +100,8 @@ const Orders = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["orders"] });
-      toast.success("تم تعيين المندوب لجميع الأوردرات المحددة");
+      queryClient.invalidateQueries({ queryKey: ["agent-orders"] });
+      toast.success("تم تعيين المندوب لجميع الأوردرات المحددة وتغيير الحالة إلى تم الشحن");
       setSelectedOrders([]);
       setBulkAgentId("");
       setBulkShippingCost(0);
