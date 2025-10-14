@@ -86,6 +86,20 @@ const adminSections = [
     icon: FileText,
     path: "/admin/invoices",
     color: "text-pink-500"
+  },
+  {
+    title: "المحافظات",
+    description: "إدارة المحافظات وأسعار الشحن",
+    icon: Settings,
+    path: "/admin/governorates",
+    color: "text-teal-500"
+  },
+  {
+    title: "جميع الأوردرات",
+    description: "عرض جميع الأوردرات",
+    icon: ShoppingCart,
+    path: "/admin/all-orders",
+    color: "text-violet-500"
   }
 ];
 

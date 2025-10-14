@@ -9,33 +9,25 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, UserCheck, Trash2, Printer } from "lucide-react";
+import { ArrowLeft, UserCheck, Printer, Download, Barcode } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import SearchBar from "@/components/admin/SearchBar";
+import * as XLSX from 'xlsx';
 
 const Orders = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [selectedOrder, setSelectedOrder] = useState<any>(null);
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [bulkAgentId, setBulkAgentId] = useState<string>("");
   const [bulkShippingCost, setBulkShippingCost] = useState<number>(0);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState<string>("");
   const [governorateFilter, setGovernorateFilter] = useState<string>("all");
-  const [modificationDialogOpen, setModificationDialogOpen] = useState(false);
-  const [selectedModifyOrder, setSelectedModifyOrder] = useState<any>(null);
-  const [modifiedAmount, setModifiedAmount] = useState<number>(0);
-
-  const egyptGovernorates = [
-    "القاهرة", "الجيزة", "الإسكندرية", "الدقهلية", "الشرقية", "المنوفية", "القليوبية",
-    "البحيرة", "الغربية", "بني سويف", "الفيوم", "المنيا", "أسيوط", "سوهاج", "قنا",
-    "الأقصر", "أسوان", "البحر الأحمر", "الوادي الجديد", "مطروح", "شمال سيناء",
-    "جنوب سيناء", "بورسعيد", "دمياط", "الإسماعيلية", "السويس", "كفر الشيخ", "الأقصر"
-  ];
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [barcodeDialogOpen, setBarcodeDialogOpen] = useState(false);
+  const [barcodeOrders, setBarcodeOrders] = useState<string[]>([""]);
+  const [officeName, setOfficeName] = useState<string>("");
 
   const { data: orders, isLoading } = useQuery({
     queryKey: ["orders"],
@@ -44,13 +36,14 @@ const Orders = () => {
         .from("orders")
         .select(`
           *,
-          customers (name, phone, address, governorate),
+          customers (name, phone, phone2, address, governorate),
           delivery_agents (name, serial_number),
           order_items (
             *,
             products (name, price)
           )
         `)
+        .is("delivery_agent_id", null)
         .order("created_at", { ascending: false });
       
       if (error) throw error;
@@ -70,18 +63,16 @@ const Orders = () => {
     },
   });
 
-  const assignAgentMutation = useMutation({
-    mutationFn: async ({ orderId, agentId }: { orderId: string; agentId: string }) => {
-      const { error } = await supabase
-        .from("orders")
-        .update({ delivery_agent_id: agentId })
-        .eq("id", orderId);
+  const { data: governorates } = useQuery({
+    queryKey: ["governorates"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("governorates")
+        .select("*")
+        .order("name", { ascending: true });
       
       if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
-      toast.success("تم تعيين المندوب");
+      return data;
     },
   });
 
@@ -100,6 +91,7 @@ const Orders = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["all-orders"] });
       queryClient.invalidateQueries({ queryKey: ["agent-orders"] });
       toast.success("تم تعيين المندوب لجميع الأوردرات المحددة وتغيير الحالة إلى تم الشحن");
       setSelectedOrders([]);
@@ -108,66 +100,39 @@ const Orders = () => {
     },
   });
 
-  const deleteOrderMutation = useMutation({
-    mutationFn: async (orderId: string) => {
-      // Delete order items first
-      const { error: itemsError } = await supabase
-        .from("order_items")
-        .delete()
-        .eq("order_id", orderId);
+  const assignByBarcodeMutation = useMutation({
+    mutationFn: async ({ orderNumbers, agentId, shippingCost }: { orderNumbers: string[]; agentId: string; shippingCost: number }) => {
+      const orderNumbersAsInt = orderNumbers.map(n => parseInt(n, 10)).filter(n => !isNaN(n));
       
-      if (itemsError) throw itemsError;
-
-      // Delete order
-      const { error } = await supabase
+      const { data: ordersToAssign, error: fetchError } = await supabase
         .from("orders")
-        .delete()
-        .eq("id", orderId);
+        .select("id")
+        .in("order_number", orderNumbersAsInt);
       
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
-      toast.success("تم حذف الأوردر");
-    },
-  });
-
-  const modifyOrderMutation = useMutation({
-    mutationFn: async ({ orderId, modifiedAmount }: { orderId: string; modifiedAmount: number }) => {
+      if (fetchError) throw fetchError;
+      
+      const orderIds = ordersToAssign.map(o => o.id);
+      
       const { error } = await supabase
         .from("orders")
         .update({ 
-          status: "delivered_with_modification",
-          modified_amount: modifiedAmount
+          delivery_agent_id: agentId,
+          shipping_cost: shippingCost,
+          status: 'shipped'
         })
-        .eq("id", orderId);
+        .in("id", orderIds);
       
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["orders"] });
-      toast.success("تم تعديل الأوردر");
-      setModificationDialogOpen(false);
-      setSelectedModifyOrder(null);
-      setModifiedAmount(0);
-    },
-  });
-
-  const updateStatusMutation = useMutation({
-    mutationFn: async ({ orderId, status }: { orderId: string; status: any }) => {
-      if (status === "delivered_with_modification") {
-        return;
-      }
-      const { error } = await supabase
-        .from("orders")
-        .update({ status: status as any })
-        .eq("id", orderId);
-      
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["orders"] });
-      toast.success("تم تحديث حالة الأوردر");
+      queryClient.invalidateQueries({ queryKey: ["all-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["agent-orders"] });
+      toast.success("تم تعيين الأوردرات بنجاح");
+      setBarcodeDialogOpen(false);
+      setBarcodeOrders([""]);
+      setBulkAgentId("");
+      setBulkShippingCost(0);
     },
   });
 
@@ -180,10 +145,10 @@ const Orders = () => {
   };
 
   const toggleSelectAll = () => {
-    if (selectedOrders.length === orders?.length) {
+    if (selectedOrders.length === filteredOrders?.length) {
       setSelectedOrders([]);
     } else {
-      setSelectedOrders(orders?.map(o => o.id) || []);
+      setSelectedOrders(filteredOrders?.map(o => o.id) || []);
     }
   };
 
@@ -203,63 +168,171 @@ const Orders = () => {
     bulkAssignMutation.mutate({ orderIds: selectedOrders, agentId: bulkAgentId, shippingCost: bulkShippingCost });
   };
 
-  const handlePrintOrder = (order: any) => {
+  const handleBarcodeAssign = () => {
+    if (!bulkAgentId) {
+      toast.error("يرجى اختيار مندوب");
+      return;
+    }
+    const validOrders = barcodeOrders.filter(o => o.trim() !== "");
+    if (validOrders.length === 0) {
+      toast.error("يرجى إدخال أرقام الأوردرات");
+      return;
+    }
+    assignByBarcodeMutation.mutate({ 
+      orderNumbers: validOrders, 
+      agentId: bulkAgentId, 
+      shippingCost: bulkShippingCost 
+    });
+  };
+
+  const handleExportExcel = () => {
+    if (selectedOrders.length === 0) {
+      toast.error("يرجى اختيار أوردرات للتصدير");
+      return;
+    }
+
+    const selectedOrdersData = orders?.filter(o => selectedOrders.includes(o.id));
+    
+    const exportData = selectedOrdersData?.map(order => {
+      const totalAmount = parseFloat(order.total_amount?.toString() || "0");
+      const discount = parseFloat(order.discount?.toString() || "0");
+      const shippingCost = parseFloat(order.shipping_cost?.toString() || "0");
+      const finalAmount = totalAmount + shippingCost;
+
+      return {
+        "رقم الأوردر": order.order_number || order.id.slice(0, 8),
+        "المحافظة": order.customers?.governorate || "-",
+        "الاسم": order.customers?.name,
+        "الهاتف": order.customers?.phone,
+        "الهاتف الإضافي": (order.customers as any)?.phone2 || "-",
+        "العنوان": order.customers?.address,
+        "تفاصيل الأوردر": order.order_details || order.order_items?.map((item: any) => 
+          `${item.products?.name} × ${item.quantity}`
+        ).join(", "),
+        "الإجمالي": totalAmount.toFixed(2),
+        "الخصم": discount.toFixed(2),
+        "الشحن": shippingCost.toFixed(2),
+        "السعر النهائي": finalAmount.toFixed(2),
+        "الملاحظات": order.notes || "-",
+        "التاريخ": new Date(order.created_at).toLocaleDateString("ar-EG")
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(exportData || []);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "الأوردرات");
+    XLSX.writeFile(wb, `orders_${new Date().toISOString().split('T')[0]}.xlsx`);
+    toast.success("تم تصدير الأوردرات بنجاح");
+  };
+
+  const handlePrintInvoices = () => {
+    if (selectedOrders.length === 0) {
+      toast.error("يرجى اختيار أوردرات للطباعة");
+      return;
+    }
+
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    const orderItems = order.order_items?.map((item: any) => `
-      <tr>
-        <td style="border: 1px solid #ddd; padding: 8px;">${item.products?.name}</td>
-        <td style="border: 1px solid #ddd; padding: 8px;">${item.quantity}</td>
-        <td style="border: 1px solid #ddd; padding: 8px;">${parseFloat(item.price.toString()).toFixed(2)} ج.م</td>
-        <td style="border: 1px solid #ddd; padding: 8px;">${(parseFloat(item.price.toString()) * item.quantity).toFixed(2)} ج.م</td>
-      </tr>
-    `).join('');
+    const selectedOrdersData = orders?.filter(o => selectedOrders.includes(o.id));
+    
+    const invoicesHtml = selectedOrdersData?.map(order => {
+      const orderItems = order.order_items?.map((item: any) => `
+        <tr>
+          <td style="border: 1px solid #ddd; padding: 8px;">${item.products?.name}</td>
+          <td style="border: 1px solid #ddd; padding: 8px;">${item.quantity}</td>
+          <td style="border: 1px solid #ddd; padding: 8px;">${parseFloat(item.price.toString()).toFixed(2)} ج.م</td>
+          <td style="border: 1px solid #ddd; padding: 8px;">${(parseFloat(item.price.toString()) * item.quantity).toFixed(2)} ج.م</td>
+        </tr>
+      `).join('');
 
-    printWindow.document.write(`
-      <html dir="rtl">
-        <head>
-          <title>فاتورة - ${order.id.slice(0, 8)}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            h1 { text-align: center; }
-            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-            th, td { border: 1px solid #ddd; padding: 12px; text-align: right; }
-            th { background-color: #f2f2f2; }
-            .info { margin: 20px 0; }
-            .total { font-size: 18px; font-weight: bold; margin-top: 20px; }
-          </style>
-        </head>
-        <body>
-          <h1>فاتورة</h1>
-          <div class="info">
-            <p><strong>رقم الأوردر:</strong> ${order.id.slice(0, 8)}</p>
+      const totalAmount = parseFloat(order.total_amount?.toString() || "0");
+      const discount = parseFloat(order.discount?.toString() || "0");
+      const shippingCost = parseFloat(order.shipping_cost?.toString() || "0");
+      const finalAmount = totalAmount + shippingCost;
+
+      return `
+        <div style="page-break-after: always; padding: 20px;">
+          <h1 style="text-align: center;">${officeName || "فاتورة"}</h1>
+          <div style="margin: 20px 0;">
+            <p><strong>رقم الأوردر:</strong> #${order.order_number || order.id.slice(0, 8)}</p>
             <p><strong>اسم العميل:</strong> ${order.customers?.name}</p>
             <p><strong>الهاتف:</strong> ${order.customers?.phone}</p>
+            ${(order.customers as any)?.phone2 ? `<p><strong>هاتف إضافي:</strong> ${(order.customers as any).phone2}</p>` : ''}
             <p><strong>العنوان:</strong> ${order.customers?.address}</p>
             <p><strong>المحافظة:</strong> ${order.customers?.governorate || '-'}</p>
+            ${order.order_details ? `<p><strong>تفاصيل الأوردر:</strong> ${order.order_details}</p>` : ''}
+            ${order.notes ? `<p><strong>ملاحظات:</strong> ${order.notes}</p>` : ''}
           </div>
-          <table>
+          <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
             <thead>
               <tr>
-                <th>المنتج</th>
-                <th>الكمية</th>
-                <th>السعر</th>
-                <th>الإجمالي</th>
+                <th style="border: 1px solid #ddd; padding: 12px; background-color: #f2f2f2;">المنتج</th>
+                <th style="border: 1px solid #ddd; padding: 12px; background-color: #f2f2f2;">الكمية</th>
+                <th style="border: 1px solid #ddd; padding: 12px; background-color: #f2f2f2;">السعر</th>
+                <th style="border: 1px solid #ddd; padding: 12px; background-color: #f2f2f2;">الإجمالي</th>
               </tr>
             </thead>
             <tbody>
               ${orderItems}
             </tbody>
           </table>
-          <div class="total">
-            الإجمالي الكلي: ${parseFloat(order.total_amount.toString()).toFixed(2)} ج.م
+          <div style="margin-top: 20px;">
+            <p style="font-size: 16px;"><strong>الإجمالي:</strong> ${totalAmount.toFixed(2)} ج.م</p>
+            ${discount > 0 ? `<p style="font-size: 16px;"><strong>الخصم:</strong> ${discount.toFixed(2)} ج.م</p>` : ''}
+            <p style="font-size: 16px;"><strong>الشحن:</strong> ${shippingCost.toFixed(2)} ج.م</p>
+            <p style="font-size: 18px; font-weight: bold;"><strong>السعر النهائي:</strong> ${finalAmount.toFixed(2)} ج.م</p>
           </div>
+        </div>
+      `;
+    }).join('');
+
+    printWindow.document.write(`
+      <html dir="rtl">
+        <head>
+          <title>الفواتير</title>
+          <style>
+            body { font-family: Arial, sans-serif; }
+            @media print {
+              .no-print { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          ${invoicesHtml}
         </body>
       </html>
     `);
     printWindow.document.close();
     printWindow.print();
+  };
+
+  const getStatusColor = (status: string) => {
+    const colors: Record<string, string> = {
+      pending: "bg-yellow-500",
+      processing: "bg-blue-500",
+      shipped: "bg-purple-500",
+      delivered: "bg-green-500",
+      cancelled: "bg-red-500",
+      returned: "bg-orange-500",
+      partially_returned: "bg-orange-400",
+      delivered_with_modification: "bg-teal-500"
+    };
+    return colors[status] || "bg-gray-500";
+  };
+
+  const getStatusText = (status: string) => {
+    const texts: Record<string, string> = {
+      pending: "قيد الانتظار",
+      processing: "قيد التنفيذ",
+      shipped: "تم الشحن",
+      delivered: "تم التوصيل",
+      cancelled: "ملغي",
+      returned: "مرتجع",
+      partially_returned: "مرتجع جزئي",
+      delivered_with_modification: "تم التوصيل مع التعديل"
+    };
+    return texts[status] || status;
   };
 
   const filteredOrders = orders?.filter(order => {
@@ -270,6 +343,10 @@ const Orders = () => {
     }
     if (governorateFilter !== "all" && order.customers?.governorate !== governorateFilter) {
       return false;
+    }
+    if (searchQuery) {
+      const orderNumber = order.order_number?.toString() || "";
+      if (!orderNumber.includes(searchQuery)) return false;
     }
     return true;
   });
@@ -296,6 +373,18 @@ const Orders = () => {
                     <span className="text-sm text-muted-foreground">
                       {selectedOrders.length} محدد
                     </span>
+                    <Button onClick={handleExportExcel} size="sm" variant="outline">
+                      <Download className="ml-2 h-4 w-4" />
+                      تصدير Excel
+                    </Button>
+                    <Button onClick={handlePrintInvoices} size="sm" variant="outline">
+                      <Printer className="ml-2 h-4 w-4" />
+                      طباعة الفواتير
+                    </Button>
+                    <Button onClick={() => setBarcodeDialogOpen(true)} size="sm" variant="outline">
+                      <Barcode className="ml-2 h-4 w-4" />
+                      تعيين بالباركود
+                    </Button>
                     <Input
                       type="number"
                       value={bulkShippingCost}
@@ -324,7 +413,17 @@ const Orders = () => {
                 )}
               </div>
               
-              <div className="flex items-center gap-4 flex-wrap">
+              <div className="sticky top-16 z-10 bg-card pt-2 pb-2 flex items-center gap-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">بحث برقم الأوردر:</span>
+                  <Input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="رقم الأوردر"
+                    className="w-48"
+                  />
+                </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">فلتر حسب الحالة:</span>
                   <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -366,9 +465,9 @@ const Orders = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">جميع المحافظات</SelectItem>
-                      {egyptGovernorates.map((gov) => (
-                        <SelectItem key={gov} value={gov}>
-                          {gov}
+                      {governorates?.map((gov) => (
+                        <SelectItem key={gov.id} value={gov.name}>
+                          {gov.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -378,7 +477,6 @@ const Orders = () => {
             </div>
           </CardHeader>
           <CardContent>
-            <SearchBar />
             {!filteredOrders || filteredOrders.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">لا توجد أوردرات</p>
             ) : (
@@ -393,147 +491,67 @@ const Orders = () => {
                         />
                       </TableHead>
                       <TableHead>رقم الأوردر</TableHead>
-                      <TableHead>العميل</TableHead>
-                      <TableHead>الهاتف</TableHead>
-                      <TableHead>العنوان</TableHead>
                       <TableHead>المحافظة</TableHead>
-                      <TableHead>الإجمالي</TableHead>
-                      <TableHead>الخصم</TableHead>
-                      <TableHead>الصافي</TableHead>
-                      <TableHead>المندوب</TableHead>
+                      <TableHead>الاسم</TableHead>
+                      <TableHead>الهاتف</TableHead>
+                      <TableHead>الهاتف الإضافي</TableHead>
+                      <TableHead>العنوان</TableHead>
+                      <TableHead>تفاصيل الأوردر</TableHead>
+                      <TableHead>السعر النهائي</TableHead>
                       <TableHead>الحالة</TableHead>
+                      <TableHead>الملاحظات</TableHead>
                       <TableHead>التاريخ</TableHead>
-                      <TableHead>إجراءات</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredOrders.map((order) => (
-                      <TableRow key={order.id}>
-                        <TableCell>
-                          <Checkbox
-                            checked={selectedOrders.includes(order.id)}
-                            onCheckedChange={() => toggleOrderSelection(order.id)}
-                          />
-                        </TableCell>
-                        <TableCell className="font-mono text-xs">
-                          #{order.order_number || order.id.slice(0, 8)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="font-medium">{order.customers?.name}</div>
-                          {order.order_details && (
-                            <div className="text-xs text-muted-foreground mt-1">
-                              {order.order_details}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div>{order.customers?.phone}</div>
-                          {(order.customers as any)?.phone2 && (
-                            <div className="text-xs text-muted-foreground">
-                              {(order.customers as any).phone2}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell className="max-w-xs">
-                          <div className="text-sm truncate" title={order.customers?.address}>
-                            {order.customers?.address}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
-                            {order.customers?.governorate || "-"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {parseFloat(order.total_amount.toString()).toFixed(2)} ج.م
-                        </TableCell>
-                        <TableCell>
-                          {order.discount > 0 ? (
-                            <span className="text-green-600">
-                              {parseFloat(order.discount.toString()).toFixed(2)} ج.م
-                            </span>
-                          ) : "-"}
-                        </TableCell>
-                        <TableCell className="font-bold">
-                          {(parseFloat(order.total_amount.toString()) - (order.discount || 0)).toFixed(2)} ج.م
-                        </TableCell>
-                        <TableCell>
-                          {order.delivery_agents ? (
-                            <Badge variant="outline">
-                              {order.delivery_agents.name}
+                    {filteredOrders.map((order) => {
+                      const totalAmount = parseFloat(order.total_amount?.toString() || "0");
+                      const discount = parseFloat(order.discount?.toString() || "0");
+                      const shippingCost = parseFloat(order.shipping_cost?.toString() || "0");
+                      const finalAmount = totalAmount + shippingCost;
+
+                      return (
+                        <TableRow key={order.id}>
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedOrders.includes(order.id)}
+                              onCheckedChange={() => toggleOrderSelection(order.id)}
+                            />
+                          </TableCell>
+                          <TableCell className="font-mono text-xs">
+                            #{order.order_number || order.id.slice(0, 8)}
+                          </TableCell>
+                          <TableCell>{order.customers?.governorate || "-"}</TableCell>
+                          <TableCell className="font-medium">{order.customers?.name}</TableCell>
+                          <TableCell>{order.customers?.phone}</TableCell>
+                          <TableCell>{(order.customers as any)?.phone2 || "-"}</TableCell>
+                          <TableCell className="max-w-xs truncate">{order.customers?.address}</TableCell>
+                          <TableCell className="max-w-xs">
+                            {order.order_details || (
+                              <div className="text-xs space-y-1">
+                                {order.order_items?.map((item: any, idx: number) => (
+                                  <div key={idx}>
+                                    {item.products?.name} × {item.quantity}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell className="font-bold">
+                            {finalAmount.toFixed(2)} ج.م
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={getStatusColor(order.status)}>
+                              {getStatusText(order.status)}
                             </Badge>
-                          ) : (
-                            <span className="text-muted-foreground text-xs">غير محدد</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Select
-                            value={order.status}
-                            onValueChange={(value) => {
-                              if (value === "delivered_with_modification") {
-                                setSelectedModifyOrder(order);
-                                setModificationDialogOpen(true);
-                              } else {
-                                updateStatusMutation.mutate({ orderId: order.id, status: value });
-                              }
-                            }}
-                          >
-                            <SelectTrigger className="w-40">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="pending">قيد الانتظار</SelectItem>
-                              <SelectItem value="processing">قيد التنفيذ</SelectItem>
-                              <SelectItem value="shipped">تم الشحن</SelectItem>
-                              <SelectItem value="delivered">تم التوصيل</SelectItem>
-                              <SelectItem value="delivered_with_modification">تم التوصيل مع التعديل</SelectItem>
-                              <SelectItem value="cancelled">ملغي</SelectItem>
-                              <SelectItem value="returned">مرتجع</SelectItem>
-                              <SelectItem value="partially_returned">مرتجع جزئي</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {new Date(order.created_at).toLocaleDateString('ar-EG')}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button 
-                              variant="ghost" 
-                              size="icon"
-                              onClick={() => handlePrintOrder(order)}
-                              title="طباعة الفاتورة"
-                            >
-                              <Printer className="h-4 w-4" />
-                            </Button>
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button variant="ghost" size="icon">
-                                  <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    هل أنت متأكد من حذف هذا الأوردر؟ لا يمكن التراجع عن هذا الإجراء.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>إلغاء</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => deleteOrderMutation.mutate(order.id)}
-                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                  >
-                                    حذف
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                          </TableCell>
+                          <TableCell className="max-w-xs truncate">{order.notes || "-"}</TableCell>
+                          <TableCell className="text-xs">
+                            {new Date(order.created_at).toLocaleDateString("ar-EG")}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -541,53 +559,63 @@ const Orders = () => {
           </CardContent>
         </Card>
 
-        {/* Modification Dialog */}
-        <Dialog open={modificationDialogOpen} onOpenChange={setModificationDialogOpen}>
-          <DialogContent>
+        <Dialog open={barcodeDialogOpen} onOpenChange={setBarcodeDialogOpen}>
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>تعديل الأوردر</DialogTitle>
+              <DialogTitle>تعيين أوردرات بالباركود</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                أدخل المبلغ المعدل للأوردر رقم #{selectedModifyOrder?.order_number || selectedModifyOrder?.id.slice(0, 8)}
-              </p>
               <div>
-                <Label htmlFor="modifiedAmount">المبلغ المعدل (ج.م)</Label>
+                <Label>اختر المندوب</Label>
+                <Select value={bulkAgentId} onValueChange={setBulkAgentId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="اختر مندوب" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {agents?.map((agent) => (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        {agent.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>شحن المندوب</Label>
                 <Input
-                  id="modifiedAmount"
                   type="number"
-                  value={modifiedAmount || ""}
-                  onChange={(e) => setModifiedAmount(Number(e.target.value) || 0)}
-                  placeholder="أدخل المبلغ الجديد"
+                  value={bulkShippingCost}
+                  onChange={(e) => setBulkShippingCost(Number(e.target.value) || 0)}
+                  placeholder="0"
                   min="0"
                 />
               </div>
-              <div className="flex gap-2 justify-end">
-                <Button 
-                  variant="outline" 
-                  onClick={() => {
-                    setModificationDialogOpen(false);
-                    setSelectedModifyOrder(null);
-                    setModifiedAmount(0);
-                  }}
+              <div className="space-y-2">
+                <Label>أرقام الأوردرات</Label>
+                {barcodeOrders.map((order, idx) => (
+                  <Input
+                    key={idx}
+                    value={order}
+                    onChange={(e) => {
+                      const newOrders = [...barcodeOrders];
+                      newOrders[idx] = e.target.value;
+                      setBarcodeOrders(newOrders);
+                    }}
+                    placeholder={`رقم الأوردر ${idx + 1}`}
+                  />
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setBarcodeOrders([...barcodeOrders, ""])}
+                  className="w-full"
                 >
-                  إلغاء
-                </Button>
-                <Button 
-                  onClick={() => {
-                    if (selectedModifyOrder && modifiedAmount > 0) {
-                      modifyOrderMutation.mutate({
-                        orderId: selectedModifyOrder.id,
-                        modifiedAmount
-                      });
-                    } else {
-                      toast.error("يرجى إدخال مبلغ صحيح");
-                    }
-                  }}
-                >
-                  تأكيد
+                  إضافة أوردر آخر
                 </Button>
               </div>
+              <Button onClick={handleBarcodeAssign} className="w-full">
+                تعيين الأوردرات
+              </Button>
             </div>
           </DialogContent>
         </Dialog>

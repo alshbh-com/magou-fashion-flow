@@ -119,6 +119,27 @@ export type Database = {
         }
         Relationships: []
       }
+      governorates: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+          shipping_cost: number
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+          shipping_cost?: number
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+          shipping_cost?: number
+        }
+        Relationships: []
+      }
       order_items: {
         Row: {
           color: string | null

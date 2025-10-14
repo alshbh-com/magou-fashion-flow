@@ -17,13 +17,6 @@ const Cart = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   
-  const egyptGovernorates = [
-    "القاهرة", "الجيزة", "الإسكندرية", "الدقهلية", "الشرقية", "المنوفية", "القليوبية",
-    "البحيرة", "الغربية", "بني سويف", "الفيوم", "المنيا", "أسيوط", "سوهاج", "قنا",
-    "الأقصر", "أسوان", "البحر الأحمر", "الوادي الجديد", "مطروح", "شمال سيناء",
-    "جنوب سيناء", "بورسعيد", "دمياط", "الإسماعيلية", "السويس", "كفر الشيخ", "الأقصر"
-  ];
-
   const [customerInfo, setCustomerInfo] = useState({
     name: "",
     phone: "",
@@ -42,6 +35,19 @@ const Cart = () => {
       const { data, error } = await supabase
         .from("products")
         .select("*");
+      
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: governorates } = useQuery({
+    queryKey: ["governorates"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("governorates")
+        .select("*")
+        .order("name", { ascending: true });
       
       if (error) throw error;
       return data;
@@ -364,15 +370,23 @@ const Cart = () => {
                   <Label htmlFor="governorate" className="text-base font-semibold mb-2 block">المحافظة *</Label>
                   <Select
                     value={customerInfo.governorate}
-                    onValueChange={(value) => setCustomerInfo({...customerInfo, governorate: value})}
+                    onValueChange={(value) => {
+                      const selectedGov = governorates?.find(g => g.name === value);
+                      const shippingCost = selectedGov ? parseFloat(selectedGov.shipping_cost.toString()) : 0;
+                      setCustomerInfo({
+                        ...customerInfo, 
+                        governorate: value,
+                        shippingCost: shippingCost
+                      });
+                    }}
                   >
                     <SelectTrigger className="h-12">
                       <SelectValue placeholder="اختر المحافظة" />
                     </SelectTrigger>
                     <SelectContent>
-                      {egyptGovernorates.map((gov) => (
-                        <SelectItem key={gov} value={gov}>
-                          {gov}
+                      {governorates?.map((gov) => (
+                        <SelectItem key={gov.id} value={gov.name}>
+                          {gov.name} - {parseFloat(gov.shipping_cost.toString()).toFixed(2)} ج.م شحن
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -412,6 +426,20 @@ const Cart = () => {
                     placeholder="ملاحظات إضافية (اختياري)"
                     rows={2}
                     className="text-base"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="shippingCost" className="text-base font-semibold mb-2 block">شحن العميل</Label>
+                  <Input
+                    id="shippingCost"
+                    type="number"
+                    value={customerInfo.shippingCost}
+                    onChange={(e) => setCustomerInfo({...customerInfo, shippingCost: Number(e.target.value) || 0})}
+                    placeholder="0"
+                    min="0"
+                    className="h-12 text-base"
+                    disabled
                   />
                 </div>
 
