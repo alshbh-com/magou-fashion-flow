@@ -32,19 +32,26 @@ const Invoices = () => {
   const handleExportExcel = () => {
     if (!orders?.length) return;
     
-    const exportData = orders.map(order => ({
-      "رقم الأوردر": order.order_number || order.id.slice(0, 8),
-      "اسم العميل": order.customers?.name || "-",
-      "الهاتف": order.customers?.phone || "-",
-      "العنوان": order.customers?.address || "-",
-      "المحافظة": order.customers?.governorate || "-",
-      "المندوب": order.delivery_agents?.name || "-",
-      "الحالة": order.status,
-      "الإجمالي": parseFloat(order.total_amount.toString()).toFixed(2),
-      "شحن العميل": parseFloat((order.shipping_cost || 0).toString()).toFixed(2),
-      "الخصم": parseFloat((order.discount || 0).toString()).toFixed(2),
-      "التاريخ": new Date(order.created_at).toLocaleDateString("ar-EG")
-    }));
+    const exportData = orders.map(order => {
+      const totalAmount = parseFloat(order.total_amount.toString());
+      const shippingCost = parseFloat((order.shipping_cost || 0).toString());
+      const finalAmount = totalAmount + shippingCost;
+      
+      return {
+        "رقم الأوردر": order.order_number || order.id.slice(0, 8),
+        "اسم العميل": order.customers?.name || "-",
+        "الهاتف": order.customers?.phone || "-",
+        "العنوان": order.customers?.address || "-",
+        "المحافظة": order.customers?.governorate || "-",
+        "المندوب": order.delivery_agents?.name || "-",
+        "الحالة": order.status,
+        "الصافي": totalAmount.toFixed(2),
+        "شحن المندوب": shippingCost.toFixed(2),
+        "الإجمالي": finalAmount.toFixed(2),
+        "الخصم": parseFloat((order.discount || 0).toString()).toFixed(2),
+        "التاريخ": new Date(order.created_at).toLocaleDateString("ar-EG")
+      };
+    });
 
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
@@ -59,7 +66,12 @@ const Invoices = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    const invoicesHTML = ordersToPrint.map(order => `
+    const invoicesHTML = ordersToPrint.map(order => {
+      const totalAmount = parseFloat(order.total_amount.toString());
+      const shippingCost = parseFloat((order.shipping_cost || 0).toString());
+      const finalAmount = totalAmount + shippingCost;
+      
+      return `
       <div style="width: 148mm; height: 210mm; padding: 10mm; page-break-after: always; font-family: Arial;">
         <h2 style="text-align: center;">Magou Fashion</h2>
         <hr/>
@@ -67,6 +79,7 @@ const Invoices = () => {
         <p><strong>العميل:</strong> ${order.customers?.name}</p>
         <p><strong>الهاتف:</strong> ${order.customers?.phone}</p>
         <p><strong>العنوان:</strong> ${order.customers?.address}</p>
+        <p><strong>المحافظة:</strong> ${order.customers?.governorate || "-"}</p>
         <hr/>
         <table style="width: 100%; border-collapse: collapse;">
           <tr><th style="border: 1px solid #000; padding: 5px;">المنتج</th><th style="border: 1px solid #000; padding: 5px;">الكمية</th><th style="border: 1px solid #000; padding: 5px;">السعر</th></tr>
@@ -75,9 +88,11 @@ const Invoices = () => {
           `).join('')}
         </table>
         <hr/>
-        <p style="text-align: left; font-size: 18px;"><strong>الإجمالي: ${parseFloat(order.total_amount.toString()).toFixed(2)} ج.م</strong></p>
+        <p style="text-align: left; font-size: 16px;"><strong>الصافي: ${totalAmount.toFixed(2)} ج.م</strong></p>
+        <p style="text-align: left; font-size: 16px;"><strong>شحن المندوب: ${shippingCost.toFixed(2)} ج.م</strong></p>
+        <p style="text-align: left; font-size: 18px;"><strong>الإجمالي: ${finalAmount.toFixed(2)} ج.م</strong></p>
       </div>
-    `).join('');
+    `;}).join('');
 
     printWindow.document.write(`<html><head><title>طباعة الفواتير</title></head><body>${invoicesHTML}</body></html>`);
     printWindow.document.close();
@@ -109,23 +124,31 @@ const Invoices = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {orders?.map((order) => (
-                <div key={order.id} className="flex items-center gap-4 p-4 border rounded">
-                  <Checkbox
-                    checked={selectedOrders.includes(order.id)}
-                    onCheckedChange={(checked) => {
-                      setSelectedOrders(checked 
-                        ? [...selectedOrders, order.id]
-                        : selectedOrders.filter(id => id !== order.id)
-                      );
-                    }}
-                  />
-                  <div className="flex-1">
-                    <p className="font-bold">{order.customers?.name}</p>
-                    <p className="text-sm text-muted-foreground">{parseFloat(order.total_amount.toString()).toFixed(2)} ج.م</p>
+              {orders?.map((order) => {
+                const totalAmount = parseFloat(order.total_amount.toString());
+                const shippingCost = parseFloat((order.shipping_cost || 0).toString());
+                const finalAmount = totalAmount + shippingCost;
+                
+                return (
+                  <div key={order.id} className="flex items-center gap-4 p-4 border rounded">
+                    <Checkbox
+                      checked={selectedOrders.includes(order.id)}
+                      onCheckedChange={(checked) => {
+                        setSelectedOrders(checked 
+                          ? [...selectedOrders, order.id]
+                          : selectedOrders.filter(id => id !== order.id)
+                        );
+                      }}
+                    />
+                    <div className="flex-1">
+                      <p className="font-bold">{order.customers?.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        الصافي: {totalAmount.toFixed(2)} ج.م | الإجمالي: {finalAmount.toFixed(2)} ج.م
+                      </p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>

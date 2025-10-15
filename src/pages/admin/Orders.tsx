@@ -252,10 +252,10 @@ const Orders = () => {
         "تفاصيل الأوردر": order.order_details || order.order_items?.map((item: any) => 
           `${item.products?.name} × ${item.quantity}`
         ).join(", "),
-        "الإجمالي": totalAmount.toFixed(2),
+        "الصافي": totalAmount.toFixed(2),
         "الخصم": discount.toFixed(2),
         "الشحن": shippingCost.toFixed(2),
-        "السعر النهائي": finalAmount.toFixed(2),
+        "الإجمالي": finalAmount.toFixed(2),
         "الملاحظات": order.notes || "-",
         "التاريخ": new Date(order.created_at).toLocaleDateString("ar-EG")
       };
@@ -321,10 +321,10 @@ const Orders = () => {
             </tbody>
           </table>
           <div style="margin-top: 20px;">
-            <p style="font-size: 16px;"><strong>الإجمالي:</strong> ${totalAmount.toFixed(2)} ج.م</p>
+            <p style="font-size: 16px;"><strong>الصافي:</strong> ${totalAmount.toFixed(2)} ج.م</p>
             ${discount > 0 ? `<p style="font-size: 16px;"><strong>الخصم:</strong> ${discount.toFixed(2)} ج.م</p>` : ''}
             <p style="font-size: 16px;"><strong>الشحن:</strong> ${shippingCost.toFixed(2)} ج.م</p>
-            <p style="font-size: 18px; font-weight: bold;"><strong>السعر النهائي:</strong> ${finalAmount.toFixed(2)} ج.م</p>
+            <p style="font-size: 18px; font-weight: bold;"><strong>الإجمالي:</strong> ${finalAmount.toFixed(2)} ج.م</p>
           </div>
         </div>
       `;

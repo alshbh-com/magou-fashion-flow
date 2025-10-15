@@ -46,6 +46,8 @@ const AgentOrders = () => {
     returned_items: [] as any[],
     notes: ""
   });
+  const [editingShipping, setEditingShipping] = useState<string | null>(null);
+  const [newShipping, setNewShipping] = useState<string>("");
 
   const { data: agents } = useQuery({
     queryKey: ["delivery_agents"],
@@ -106,6 +108,82 @@ const AgentOrders = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["agent-orders"] });
       toast.success("تم تحديث الحالة");
+    },
+  });
+
+  const updateShippingMutation = useMutation({
+    mutationFn: async ({ orderId, newShipping, oldShipping, agentId }: { orderId: string; newShipping: number; oldShipping: number; agentId: string }) => {
+      // Update order shipping cost
+      const { error: orderError } = await supabase
+        .from("orders")
+        .update({ shipping_cost: newShipping })
+        .eq("id", orderId);
+      
+      if (orderError) throw orderError;
+
+      // Calculate the difference
+      const difference = newShipping - oldShipping;
+
+      // Update agent total_owed
+      const { data: agent, error: fetchError } = await supabase
+        .from("delivery_agents")
+        .select("total_owed")
+        .eq("id", agentId)
+        .single();
+      
+      if (fetchError) throw fetchError;
+
+      const newTotalOwed = parseFloat(agent.total_owed.toString()) + difference;
+      
+      const { error: updateError } = await supabase
+        .from("delivery_agents")
+        .update({ total_owed: newTotalOwed })
+        .eq("id", agentId);
+      
+      if (updateError) throw updateError;
+
+      // Add a payment record for the adjustment
+      if (difference !== 0) {
+        const { error: paymentError } = await supabase
+          .from("agent_payments")
+          .insert({
+            delivery_agent_id: agentId,
+            order_id: orderId,
+            amount: difference,
+            payment_type: 'owed',
+            notes: `تعديل شحن - فرق ${difference > 0 ? '+' : ''}${difference.toFixed(2)} ج.م`
+          });
+        
+        if (paymentError) throw paymentError;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agent-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
+      queryClient.invalidateQueries({ queryKey: ["agent_payments"] });
+      toast.success("تم تحديث سعر الشحن");
+    },
+  });
+
+  const unassignAgentMutation = useMutation({
+    mutationFn: async (orderId: string) => {
+      const { error } = await supabase
+        .from("orders")
+        .update({ 
+          delivery_agent_id: null,
+          status: 'pending'
+        })
+        .eq("id", orderId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agent-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["all-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
+      queryClient.invalidateQueries({ queryKey: ["agent_payments"] });
+      toast.success("تم إلغاء تعيين المندوب");
     },
   });
 
@@ -325,10 +403,9 @@ const AgentOrders = () => {
                         <TableHead>العميل</TableHead>
                         <TableHead>الهاتف</TableHead>
                         <TableHead>العنوان</TableHead>
-                        <TableHead>الإجمالي</TableHead>
-                        <TableHead>الخصم</TableHead>
-                        <TableHead>شحن المندوب</TableHead>
                         <TableHead>الصافي</TableHead>
+                        <TableHead>شحن المندوب</TableHead>
+                        <TableHead>الإجمالي</TableHead>
                         <TableHead>الحالة</TableHead>
                         <TableHead>التاريخ</TableHead>
                         <TableHead>إجراءات</TableHead>
@@ -338,7 +415,6 @@ const AgentOrders = () => {
                       {filteredOrders.map((order) => {
                         const shippingCost = parseFloat(order.shipping_cost?.toString() || "0");
                         const totalAmount = parseFloat(order.total_amount.toString());
-                        const discount = parseFloat(order.discount?.toString() || "0");
                         const netAmount = totalAmount + shippingCost;
                         
                         return (
@@ -350,17 +426,55 @@ const AgentOrders = () => {
                               {order.customers?.name}
                             </TableCell>
                             <TableCell>{order.customers?.phone}</TableCell>
-                            <TableCell className="max-w-xs truncate">
+                            <TableCell className="max-w-xs whitespace-normal break-words">
                               {order.customers?.address}
                             </TableCell>
-                            <TableCell className="font-bold">
+                            <TableCell className="font-bold text-blue-600">
                               {totalAmount.toFixed(2)} ج.م
                             </TableCell>
-                            <TableCell className="text-red-600 font-semibold">
-                              {discount.toFixed(2)} ج.م
-                            </TableCell>
-                            <TableCell className="text-orange-600 font-semibold">
-                              {shippingCost.toFixed(2)} ج.م
+                            <TableCell>
+                              {editingShipping === order.id ? (
+                                <div className="flex items-center gap-2">
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    value={newShipping}
+                                    onChange={(e) => setNewShipping(e.target.value)}
+                                    className="w-20"
+                                  />
+                                  <Button
+                                    size="sm"
+                                    onClick={() => {
+                                      updateShippingMutation.mutate({
+                                        orderId: order.id,
+                                        newShipping: parseFloat(newShipping),
+                                        oldShipping: shippingCost,
+                                        agentId: order.delivery_agent_id!
+                                      });
+                                      setEditingShipping(null);
+                                    }}
+                                  >
+                                    حفظ
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => setEditingShipping(null)}
+                                  >
+                                    ✕
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div
+                                  className="text-orange-600 font-semibold cursor-pointer hover:bg-accent p-2 rounded"
+                                  onClick={() => {
+                                    setEditingShipping(order.id);
+                                    setNewShipping(shippingCost.toString());
+                                  }}
+                                >
+                                  {shippingCost.toFixed(2)} ج.م
+                                </div>
+                              )}
                             </TableCell>
                             <TableCell className="text-green-600 font-bold">
                               {netAmount.toFixed(2)} ج.م
@@ -391,7 +505,7 @@ const AgentOrders = () => {
                           {new Date(order.created_at).toLocaleDateString("ar-EG")}
                         </TableCell>
                         <TableCell>
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 flex-wrap">
                             <Button
                               variant="ghost"
                               size="icon"
@@ -408,6 +522,17 @@ const AgentOrders = () => {
                               <PackageX className="ml-2 h-4 w-4" />
                               مرتجع
                             </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => {
+                                if (window.confirm("هل أنت متأكد من إلغاء تعيين المندوب؟ سيتم إرجاع الأوردر إلى قائمة الأوردرات")) {
+                                  unassignAgentMutation.mutate(order.id);
+                                }
+                              }}
+                            >
+                              إلغاء التعيين
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -420,17 +545,14 @@ const AgentOrders = () => {
                 <div className="mt-6 p-4 bg-accent rounded-lg space-y-2">
                   <h3 className="font-bold mb-2">ملخص الأوردرات</h3>
                   <p>عدد الأوردرات: {filteredOrders.length}</p>
-                  <p className="font-bold text-lg">
-                    الإجمالي: {filteredOrders.reduce((sum, order) => sum + parseFloat(order.total_amount.toString()), 0).toFixed(2)} ج.م
-                  </p>
-                  <p className="font-bold text-lg text-red-600">
-                    الخصومات: {filteredOrders.reduce((sum, order) => sum + parseFloat(order.discount?.toString() || "0"), 0).toFixed(2)} ج.م
+                  <p className="font-bold text-lg text-blue-600">
+                    الصافي: {filteredOrders.reduce((sum, order) => sum + parseFloat(order.total_amount.toString()), 0).toFixed(2)} ج.م
                   </p>
                   <p className="font-bold text-lg text-orange-600">
                     مصاريف الشحن: {filteredOrders.reduce((sum, order) => sum + parseFloat(order.shipping_cost?.toString() || "0"), 0).toFixed(2)} ج.م
                   </p>
                   <p className="font-bold text-xl text-green-600">
-                    الصافي المطلوب من المندوب: {filteredOrders.reduce((sum, order) => {
+                    الإجمالي المطلوب من المندوب: {filteredOrders.reduce((sum, order) => {
                       const total = parseFloat(order.total_amount.toString());
                       const shipping = parseFloat(order.shipping_cost?.toString() || "0");
                       return sum + (total + shipping);
