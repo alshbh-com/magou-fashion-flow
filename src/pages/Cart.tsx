@@ -117,7 +117,7 @@ const Cart = () => {
         .from("orders")
         .insert({
           customer_id: customer.id,
-          total_amount: getTotalPrice() + customerInfo.shippingCost,
+          total_amount: getTotalPrice(),
           shipping_cost: customerInfo.shippingCost,
           discount: customerInfo.discount,
           order_details: customerInfo.orderDetails || null,

@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, UserCheck, Printer, Download, Barcode } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -28,6 +29,7 @@ const Orders = () => {
   const [barcodeDialogOpen, setBarcodeDialogOpen] = useState(false);
   const [barcodeOrders, setBarcodeOrders] = useState<string[]>([""]);
   const [officeName, setOfficeName] = useState<string>("");
+  const [editingNotes, setEditingNotes] = useState<{ [key: string]: string }>({});
 
   const { data: orders, isLoading } = useQuery({
     queryKey: ["orders"],
@@ -133,6 +135,47 @@ const Orders = () => {
       setBarcodeOrders([""]);
       setBulkAgentId("");
       setBulkShippingCost(0);
+    },
+  });
+
+  const updateNotesMutation = useMutation({
+    mutationFn: async ({ orderId, notes }: { orderId: string; notes: string }) => {
+      const { error } = await supabase
+        .from("orders")
+        .update({ notes })
+        .eq("id", orderId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      toast.success("تم تحديث الملاحظات بنجاح");
+      setEditingNotes({});
+    },
+  });
+
+  const deleteOrderMutation = useMutation({
+    mutationFn: async (orderId: string) => {
+      // First delete order items
+      const { error: itemsError } = await supabase
+        .from("order_items")
+        .delete()
+        .eq("order_id", orderId);
+      
+      if (itemsError) throw itemsError;
+
+      // Then delete the order
+      const { error } = await supabase
+        .from("orders")
+        .delete()
+        .eq("id", orderId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["all-orders"] });
+      toast.success("تم حذف الأوردر بنجاح");
     },
   });
 
@@ -345,8 +388,18 @@ const Orders = () => {
       return false;
     }
     if (searchQuery) {
+      const query = searchQuery.toLowerCase();
       const orderNumber = order.order_number?.toString() || "";
-      if (!orderNumber.includes(searchQuery)) return false;
+      const customerName = order.customers?.name?.toLowerCase() || "";
+      const customerPhone = order.customers?.phone || "";
+      const customerPhone2 = (order.customers as any)?.phone2 || "";
+      
+      if (!orderNumber.includes(query) && 
+          !customerName.includes(query) && 
+          !customerPhone.includes(query) && 
+          !customerPhone2.includes(query)) {
+        return false;
+      }
     }
     return true;
   });
@@ -415,13 +468,13 @@ const Orders = () => {
               
               <div className="sticky top-16 z-10 bg-card pt-2 pb-2 flex items-center gap-4 flex-wrap">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">بحث برقم الأوردر:</span>
+                  <span className="text-sm font-medium">بحث:</span>
                   <Input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="رقم الأوردر"
-                    className="w-48"
+                    placeholder="رقم الأوردر، الاسم، أو الهاتف"
+                    className="w-64"
                   />
                 </div>
                 <div className="flex items-center gap-2">
@@ -498,9 +551,9 @@ const Orders = () => {
                       <TableHead>العنوان</TableHead>
                       <TableHead>تفاصيل الأوردر</TableHead>
                       <TableHead>السعر النهائي</TableHead>
-                      <TableHead>الحالة</TableHead>
                       <TableHead>الملاحظات</TableHead>
                       <TableHead>التاريخ</TableHead>
+                      <TableHead>إجراءات</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -525,7 +578,7 @@ const Orders = () => {
                           <TableCell className="font-medium">{order.customers?.name}</TableCell>
                           <TableCell>{order.customers?.phone}</TableCell>
                           <TableCell>{(order.customers as any)?.phone2 || "-"}</TableCell>
-                          <TableCell className="max-w-xs truncate">{order.customers?.address}</TableCell>
+                          <TableCell className="max-w-xs break-words whitespace-normal">{order.customers?.address}</TableCell>
                           <TableCell className="max-w-xs">
                             {order.order_details || (
                               <div className="text-xs space-y-1">
@@ -540,14 +593,59 @@ const Orders = () => {
                           <TableCell className="font-bold">
                             {finalAmount.toFixed(2)} ج.م
                           </TableCell>
-                          <TableCell>
-                            <Badge className={getStatusColor(order.status)}>
-                              {getStatusText(order.status)}
-                            </Badge>
+                          <TableCell className="max-w-xs">
+                            {editingNotes[order.id] !== undefined ? (
+                              <div className="space-y-2">
+                                <Textarea
+                                  value={editingNotes[order.id]}
+                                  onChange={(e) => setEditingNotes({ ...editingNotes, [order.id]: e.target.value })}
+                                  rows={3}
+                                  className="min-w-[200px]"
+                                />
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    onClick={() => updateNotesMutation.mutate({ orderId: order.id, notes: editingNotes[order.id] })}
+                                  >
+                                    حفظ
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => {
+                                      const newNotes = { ...editingNotes };
+                                      delete newNotes[order.id];
+                                      setEditingNotes(newNotes);
+                                    }}
+                                  >
+                                    إلغاء
+                                  </Button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div 
+                                className="cursor-pointer hover:bg-accent/20 p-2 rounded break-words whitespace-normal"
+                                onClick={() => setEditingNotes({ ...editingNotes, [order.id]: order.notes || "" })}
+                              >
+                                {order.notes || "اضغط لإضافة ملاحظة"}
+                              </div>
+                            )}
                           </TableCell>
-                          <TableCell className="max-w-xs truncate">{order.notes || "-"}</TableCell>
                           <TableCell className="text-xs">
                             {new Date(order.created_at).toLocaleDateString("ar-EG")}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => {
+                                if (confirm("هل أنت متأكد من حذف هذا الأوردر؟")) {
+                                  deleteOrderMutation.mutate(order.id);
+                                }
+                              }}
+                            >
+                              حذف
+                            </Button>
                           </TableCell>
                         </TableRow>
                       );
