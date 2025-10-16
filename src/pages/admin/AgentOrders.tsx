@@ -403,9 +403,9 @@ const AgentOrders = () => {
                         <TableHead>العميل</TableHead>
                         <TableHead>الهاتف</TableHead>
                         <TableHead>العنوان</TableHead>
-                        <TableHead>الصافي</TableHead>
-                        <TableHead>شحن المندوب</TableHead>
                         <TableHead>الإجمالي</TableHead>
+                        <TableHead>شحن المندوب</TableHead>
+                        <TableHead>الصافي</TableHead>
                         <TableHead>الحالة</TableHead>
                         <TableHead>التاريخ</TableHead>
                         <TableHead>إجراءات</TableHead>
@@ -416,8 +416,8 @@ const AgentOrders = () => {
                         const customerShipping = parseFloat(order.shipping_cost?.toString() || "0");
                         const agentShipping = parseFloat(order.agent_shipping_cost?.toString() || "0");
                         const totalAmount = parseFloat(order.total_amount.toString());
-                        const netAmount = totalAmount + customerShipping;
-                        const totalOwed = netAmount - agentShipping;
+                        const totalPrice = totalAmount + customerShipping; // الإجمالي (ثابت)
+                        const netAmount = totalPrice - agentShipping; // الصافي (المستحقات)
                         
                         return (
                           <TableRow key={order.id}>
@@ -432,7 +432,7 @@ const AgentOrders = () => {
                               {order.customers?.address}
                             </TableCell>
                             <TableCell className="font-bold text-blue-600">
-                              {totalAmount.toFixed(2)} ج.م
+                              {totalPrice.toFixed(2)} ج.م
                             </TableCell>
                             <TableCell>
                               {editingShipping === order.id ? (
@@ -478,8 +478,8 @@ const AgentOrders = () => {
                                 </div>
                               )}
                             </TableCell>
-                            <TableCell className="text-green-600 font-bold">
-                              {totalOwed.toFixed(2)} ج.م
+                            <TableCell className="font-bold text-green-600">
+                              {netAmount.toFixed(2)} ج.م
                             </TableCell>
                         <TableCell>
                           <Select
@@ -547,17 +547,18 @@ const AgentOrders = () => {
                 <div className="mt-6 p-4 bg-accent rounded-lg space-y-2">
                   <h3 className="font-bold mb-2">ملخص الأوردرات</h3>
                   <p>عدد الأوردرات: {filteredOrders.length}</p>
-                  <p className="font-bold text-lg text-blue-600">
-                    الصافي (المنتجات): {filteredOrders.reduce((sum, order) => sum + parseFloat(order.total_amount.toString()), 0).toFixed(2)} ج.م
-                  </p>
                   <p className="font-bold text-lg text-purple-600">
-                    شحن العملاء: {filteredOrders.reduce((sum, order) => sum + parseFloat(order.shipping_cost?.toString() || "0"), 0).toFixed(2)} ج.م
+                    الإجمالي (المنتجات + شحن العملاء): {filteredOrders.reduce((sum, order) => {
+                      const total = parseFloat(order.total_amount.toString());
+                      const customerShipping = parseFloat(order.shipping_cost?.toString() || "0");
+                      return sum + (total + customerShipping);
+                    }, 0).toFixed(2)} ج.م
                   </p>
                   <p className="font-bold text-lg text-orange-600">
                     شحن المندوب (خصم): {filteredOrders.reduce((sum, order) => sum + parseFloat(order.agent_shipping_cost?.toString() || "0"), 0).toFixed(2)} ج.م
                   </p>
                   <p className="font-bold text-xl text-green-600">
-                    الإجمالي المطلوب من المندوب: {filteredOrders.reduce((sum, order) => {
+                    الصافي المطلوب من المندوب: {filteredOrders.reduce((sum, order) => {
                       const total = parseFloat(order.total_amount.toString());
                       const customerShipping = parseFloat(order.shipping_cost?.toString() || "0");
                       const agentShipping = parseFloat(order.agent_shipping_cost?.toString() || "0");
