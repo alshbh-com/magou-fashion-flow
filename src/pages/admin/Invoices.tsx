@@ -34,8 +34,10 @@ const Invoices = () => {
     
     const exportData = orders.map(order => {
       const totalAmount = parseFloat(order.total_amount.toString());
-      const shippingCost = parseFloat((order.shipping_cost || 0).toString());
-      const finalAmount = totalAmount + shippingCost;
+      const customerShipping = parseFloat((order.shipping_cost || 0).toString());
+      const agentShipping = parseFloat((order.agent_shipping_cost || 0).toString());
+      const netAmount = totalAmount + customerShipping;
+      const totalOwed = netAmount - agentShipping;
       
       return {
         "رقم الأوردر": order.order_number || order.id.slice(0, 8),
@@ -46,8 +48,10 @@ const Invoices = () => {
         "المندوب": order.delivery_agents?.name || "-",
         "الحالة": order.status,
         "الصافي": totalAmount.toFixed(2),
-        "شحن المندوب": shippingCost.toFixed(2),
-        "الإجمالي": finalAmount.toFixed(2),
+        "شحن العميل": customerShipping.toFixed(2),
+        "شحن المندوب": agentShipping.toFixed(2),
+        "الإجمالي": netAmount.toFixed(2),
+        "المطلوب من المندوب": totalOwed.toFixed(2),
         "الخصم": parseFloat((order.discount || 0).toString()).toFixed(2),
         "التاريخ": new Date(order.created_at).toLocaleDateString("ar-EG")
       };
@@ -68,8 +72,10 @@ const Invoices = () => {
 
     const invoicesHTML = ordersToPrint.map(order => {
       const totalAmount = parseFloat(order.total_amount.toString());
-      const shippingCost = parseFloat((order.shipping_cost || 0).toString());
-      const finalAmount = totalAmount + shippingCost;
+      const customerShipping = parseFloat((order.shipping_cost || 0).toString());
+      const agentShipping = parseFloat((order.agent_shipping_cost || 0).toString());
+      const netAmount = totalAmount + customerShipping;
+      const totalOwed = netAmount - agentShipping;
       
       return `
       <div style="width: 148mm; height: 210mm; padding: 10mm; page-break-after: always; font-family: Arial;">
@@ -89,8 +95,10 @@ const Invoices = () => {
         </table>
         <hr/>
         <p style="text-align: left; font-size: 16px;"><strong>الصافي: ${totalAmount.toFixed(2)} ج.م</strong></p>
-        <p style="text-align: left; font-size: 16px;"><strong>شحن المندوب: ${shippingCost.toFixed(2)} ج.م</strong></p>
-        <p style="text-align: left; font-size: 18px;"><strong>الإجمالي: ${finalAmount.toFixed(2)} ج.م</strong></p>
+        <p style="text-align: left; font-size: 16px;"><strong>شحن العميل: ${customerShipping.toFixed(2)} ج.م</strong></p>
+        <p style="text-align: left; font-size: 16px;"><strong>شحن المندوب: ${agentShipping.toFixed(2)} ج.م</strong></p>
+        <p style="text-align: left; font-size: 18px;"><strong>الإجمالي: ${netAmount.toFixed(2)} ج.م</strong></p>
+        <p style="text-align: left; font-size: 18px;"><strong>المطلوب من المندوب: ${totalOwed.toFixed(2)} ج.م</strong></p>
       </div>
     `;}).join('');
 
@@ -126,8 +134,10 @@ const Invoices = () => {
             <div className="space-y-2">
               {orders?.map((order) => {
                 const totalAmount = parseFloat(order.total_amount.toString());
-                const shippingCost = parseFloat((order.shipping_cost || 0).toString());
-                const finalAmount = totalAmount + shippingCost;
+                const customerShipping = parseFloat((order.shipping_cost || 0).toString());
+                const agentShipping = parseFloat((order.agent_shipping_cost || 0).toString());
+                const netAmount = totalAmount + customerShipping;
+                const totalOwed = netAmount - agentShipping;
                 
                 return (
                   <div key={order.id} className="flex items-center gap-4 p-4 border rounded">
@@ -143,7 +153,7 @@ const Invoices = () => {
                     <div className="flex-1">
                       <p className="font-bold">{order.customers?.name}</p>
                       <p className="text-sm text-muted-foreground">
-                        الصافي: {totalAmount.toFixed(2)} ج.م | الإجمالي: {finalAmount.toFixed(2)} ج.م
+                        الصافي: {totalAmount.toFixed(2)} ج.م | الإجمالي: {netAmount.toFixed(2)} ج.م | المطلوب من المندوب: {totalOwed.toFixed(2)} ج.م
                       </p>
                     </div>
                   </div>

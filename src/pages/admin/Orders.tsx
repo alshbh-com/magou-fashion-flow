@@ -84,7 +84,7 @@ const Orders = () => {
         .from("orders")
         .update({ 
           delivery_agent_id: agentId,
-          shipping_cost: shippingCost,
+          agent_shipping_cost: shippingCost,
           status: 'shipped'
         })
         .in("id", orderIds);
@@ -119,7 +119,7 @@ const Orders = () => {
         .from("orders")
         .update({ 
           delivery_agent_id: agentId,
-          shipping_cost: shippingCost,
+          agent_shipping_cost: shippingCost,
           status: 'shipped'
         })
         .in("id", orderIds);
