@@ -10,28 +10,26 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, PackageX, Printer } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ArrowLeft, PackageX, Printer, Download } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import * as XLSX from 'xlsx';
 
 const statusLabels: Record<string, string> = {
-  pending: "قيد الانتظار",
-  processing: "قيد التنفيذ",
   shipped: "تم الشحن",
   delivered: "تم التوصيل",
-  cancelled: "ملغي",
   returned: "مرتجع",
-  partially_returned: "مرتجع جزئي"
+  partially_returned: "مرتجع جزئي",
+  return_no_shipping: "مرتجع دون شحن"
 };
 
 const statusColors: Record<string, string> = {
-  pending: "bg-yellow-500",
-  processing: "bg-blue-500",
   shipped: "bg-purple-500",
   delivered: "bg-green-500",
-  cancelled: "bg-red-500",
   returned: "bg-orange-600",
-  partially_returned: "bg-orange-400"
+  partially_returned: "bg-orange-400",
+  return_no_shipping: "bg-red-500"
 };
 
 const AgentOrders = () => {
@@ -40,11 +38,14 @@ const AgentOrders = () => {
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState<string>("");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [selectedOrderForReturn, setSelectedOrderForReturn] = useState<any>(null);
   const [returnData, setReturnData] = useState({
     returned_items: [] as any[],
-    notes: ""
+    notes: "",
+    removeShipping: false
   });
   const [editingShipping, setEditingShipping] = useState<string | null>(null);
   const [newShipping, setNewShipping] = useState<string>("");
@@ -79,10 +80,28 @@ const AgentOrders = () => {
           )
         `)
         .eq("delivery_agent_id", selectedAgentId)
+        .not("status", "in", '("delivered","returned","partially_returned","cancelled")')
         .order("created_at", { ascending: false });
       
       if (error) throw error;
       return data;
+    },
+    enabled: !!selectedAgentId
+  });
+
+  const { data: agentPayments } = useQuery({
+    queryKey: ["agent_payments", selectedAgentId],
+    queryFn: async () => {
+      if (!selectedAgentId) return null;
+      
+      const { data: agent, error } = await supabase
+        .from("delivery_agents")
+        .select("total_owed, total_paid")
+        .eq("id", selectedAgentId)
+        .single();
+      
+      if (error) throw error;
+      return agent;
     },
     enabled: !!selectedAgentId
   });
@@ -93,20 +112,69 @@ const AgentOrders = () => {
       const orderDate = new Date(order.created_at).toISOString().split('T')[0];
       if (orderDate !== dateFilter) return false;
     }
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const orderNumber = order.order_number?.toString() || "";
+      const customerName = order.customers?.name?.toLowerCase() || "";
+      const customerPhone = order.customers?.phone || "";
+      
+      if (!orderNumber.includes(query) && 
+          !customerName.includes(query) && 
+          !customerPhone.includes(query)) {
+        return false;
+      }
+    }
     return true;
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+    mutationFn: async ({ id, status, removeShipping }: { id: string; status: string; removeShipping?: boolean }) => {
+      const order = orders?.find(o => o.id === id);
+      if (!order) throw new Error("Order not found");
+
+      let updates: any = { status: status as any };
+      
+      // إذا كانت الحالة "مرتجع دون شحن"، خصم الشحن من المبلغ
+      if (status === "return_no_shipping" && removeShipping) {
+        const customerShipping = parseFloat(order.shipping_cost?.toString() || "0");
+        
+        // خصم الشحن من المستحقات
+        const { error: agentError } = await supabase
+          .from("delivery_agents")
+          .update({ 
+            total_owed: order.delivery_agent_id ? 
+              await supabase.from("delivery_agents")
+                .select("total_owed")
+                .eq("id", order.delivery_agent_id)
+                .single()
+                .then(({ data }) => parseFloat(data?.total_owed?.toString() || "0") - customerShipping)
+              : 0
+          })
+          .eq("id", order.delivery_agent_id!);
+        
+        if (agentError) throw agentError;
+
+        // إضافة سجل دفع
+        await supabase.from("agent_payments").insert({
+          delivery_agent_id: order.delivery_agent_id,
+          order_id: id,
+          amount: -customerShipping,
+          payment_type: 'return',
+          notes: 'مرتجع دون شحن - خصم الشحن'
+        });
+      }
+
       const { error } = await supabase
         .from("orders")
-        .update({ status: status as any })
+        .update(updates)
         .eq("id", id);
       
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["agent-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["agent_payments"] });
+      queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
       toast.success("تم تحديث الحالة");
     },
   });
@@ -165,6 +233,34 @@ const AgentOrders = () => {
     },
   });
 
+  const deleteOrderMutation = useMutation({
+    mutationFn: async (orderId: string) => {
+      // Delete order_items first
+      const { error: itemsError } = await supabase
+        .from("order_items")
+        .delete()
+        .eq("order_id", orderId);
+      
+      if (itemsError) throw itemsError;
+
+      // Delete order
+      const { error } = await supabase
+        .from("orders")
+        .delete()
+        .eq("id", orderId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agent-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["all-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
+      queryClient.invalidateQueries({ queryKey: ["agent_payments"] });
+      toast.success("تم حذف الأوردر");
+    },
+  });
+
   const unassignAgentMutation = useMutation({
     mutationFn: async (orderId: string) => {
       const { error } = await supabase
@@ -207,7 +303,7 @@ const AgentOrders = () => {
       toast.success("تم تسجيل المرتجع بنجاح");
       setReturnDialogOpen(false);
       setSelectedOrderForReturn(null);
-      setReturnData({ returned_items: [], notes: "" });
+      setReturnData({ returned_items: [], notes: "", removeShipping: false });
     },
   });
 
@@ -220,8 +316,139 @@ const AgentOrders = () => {
       returned_quantity: 0,
       price: parseFloat(item.price.toString())
     }));
-    setReturnData({ returned_items: items, notes: "" });
+    setReturnData({ returned_items: items, notes: "", removeShipping: false });
     setReturnDialogOpen(true);
+  };
+
+  const toggleOrderSelection = (orderId: string) => {
+    setSelectedOrders(prev =>
+      prev.includes(orderId)
+        ? prev.filter(id => id !== orderId)
+        : [...prev, orderId]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedOrders.length === filteredOrders?.length) {
+      setSelectedOrders([]);
+    } else {
+      setSelectedOrders(filteredOrders?.map(o => o.id) || []);
+    }
+  };
+
+  const handleExportExcel = () => {
+    if (selectedOrders.length === 0) {
+      toast.error("يرجى اختيار أوردرات للتصدير");
+      return;
+    }
+
+    const selectedOrdersData = orders?.filter(o => selectedOrders.includes(o.id));
+    
+    const exportData = selectedOrdersData?.map(order => {
+      const customerShipping = parseFloat(order.shipping_cost?.toString() || "0");
+      const agentShipping = parseFloat(order.agent_shipping_cost?.toString() || "0");
+      const totalAmount = parseFloat(order.total_amount.toString());
+      const totalPrice = totalAmount + customerShipping;
+      const netAmount = totalPrice - agentShipping;
+
+      return {
+        "رقم الأوردر": order.order_number || order.id.slice(0, 8),
+        "الاسم": order.customers?.name,
+        "الهاتف": order.customers?.phone,
+        "العنوان": order.customers?.address,
+        "المحافظة": order.customers?.governorate || "-",
+        "الإجمالي": totalPrice.toFixed(2),
+        "شحن المندوب": agentShipping.toFixed(2),
+        "الصافي": netAmount.toFixed(2),
+        "الحالة": statusLabels[order.status] || order.status,
+        "التاريخ": new Date(order.created_at).toLocaleDateString("ar-EG")
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(exportData || []);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "أوردرات المندوب");
+    XLSX.writeFile(wb, `agent_orders_${new Date().toISOString().split('T')[0]}.xlsx`);
+    toast.success("تم تصدير الأوردرات بنجاح");
+  };
+
+  const handlePrintOrders = () => {
+    if (selectedOrders.length === 0) {
+      toast.error("يرجى اختيار أوردرات للطباعة");
+      return;
+    }
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const selectedOrdersData = orders?.filter(o => selectedOrders.includes(o.id));
+    
+    const invoicesHtml = selectedOrdersData?.map(order => {
+      const orderItems = order.order_items?.map((item: any) => `
+        <tr>
+          <td style="border: 1px solid #ddd; padding: 8px;">${item.products?.name}</td>
+          <td style="border: 1px solid #ddd; padding: 8px;">${item.quantity}</td>
+          <td style="border: 1px solid #ddd; padding: 8px;">${parseFloat(item.price.toString()).toFixed(2)} ج.م</td>
+          <td style="border: 1px solid #ddd; padding: 8px;">${(parseFloat(item.price.toString()) * item.quantity).toFixed(2)} ج.م</td>
+        </tr>
+      `).join('');
+
+      const customerShipping = parseFloat(order.shipping_cost?.toString() || "0");
+      const agentShipping = parseFloat(order.agent_shipping_cost?.toString() || "0");
+      const totalAmount = parseFloat(order.total_amount.toString());
+      const totalPrice = totalAmount + customerShipping;
+      const netAmount = totalPrice - agentShipping;
+
+      return `
+        <div style="page-break-after: always; padding: 20px;">
+          <h1 style="text-align: center;">فاتورة</h1>
+          <div style="margin: 20px 0;">
+            <p><strong>رقم الأوردر:</strong> #${order.order_number || order.id.slice(0, 8)}</p>
+            <p><strong>اسم العميل:</strong> ${order.customers?.name}</p>
+            <p><strong>الهاتف:</strong> ${order.customers?.phone}</p>
+            <p><strong>العنوان:</strong> ${order.customers?.address}</p>
+            <p><strong>المحافظة:</strong> ${order.customers?.governorate || '-'}</p>
+          </div>
+          <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+            <thead>
+              <tr>
+                <th style="border: 1px solid #ddd; padding: 12px; background-color: #f2f2f2;">المنتج</th>
+                <th style="border: 1px solid #ddd; padding: 12px; background-color: #f2f2f2;">الكمية</th>
+                <th style="border: 1px solid #ddd; padding: 12px; background-color: #f2f2f2;">السعر</th>
+                <th style="border: 1px solid #ddd; padding: 12px; background-color: #f2f2f2;">الإجمالي</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${orderItems}
+            </tbody>
+          </table>
+          <div style="margin-top: 20px;">
+            <p style="font-size: 18px; font-weight: bold;"><strong>الإجمالي:</strong> ${totalPrice.toFixed(2)} ج.م</p>
+            <p style="font-size: 16px;"><strong>شحن المندوب:</strong> ${agentShipping.toFixed(2)} ج.م</p>
+            <p style="font-size: 18px; font-weight: bold;"><strong>المطلوب من المندوب:</strong> ${netAmount.toFixed(2)} ج.م</p>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    printWindow.document.write(`
+      <html dir="rtl">
+        <head>
+          <title>أوردرات المندوب</title>
+          <style>
+            body { font-family: Arial, sans-serif; }
+            @media print {
+              .no-print { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          ${invoicesHtml}
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
   };
 
   const handleReturnQuantityChange = (index: number, value: number) => {
@@ -246,10 +473,17 @@ const AgentOrders = () => {
       item.returned_quantity === item.total_quantity
     );
 
+    // تحديد الحالة
+    let newStatus = allReturned ? "returned" : "partially_returned";
+    if (returnData.removeShipping) {
+      newStatus = "return_no_shipping";
+    }
+
     // Update order status
     await updateStatusMutation.mutateAsync({
       id: selectedOrderForReturn.id,
-      status: allReturned ? "returned" : "partially_returned"
+      status: newStatus,
+      removeShipping: returnData.removeShipping
     });
 
     // Create return record
@@ -352,38 +586,65 @@ const AgentOrders = () => {
               </Select>
 
               {selectedAgentId && (
-                <div className="flex items-center gap-4 flex-wrap">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">فلتر حسب الحالة:</span>
-                    <Select value={statusFilter} onValueChange={setStatusFilter}>
-                      <SelectTrigger className="w-48">
-                        <SelectValue placeholder="جميع الحالات" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">جميع الحالات</SelectItem>
-                        {Object.entries(statusLabels).map(([value, label]) => (
-                          <SelectItem key={value} value={value}>
-                            {label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                <>
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">بحث:</span>
+                      <Input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="رقم الطلب، اسم العميل، أو رقم الهاتف"
+                        className="w-64"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">فلتر حسب الحالة:</span>
+                      <Select value={statusFilter} onValueChange={setStatusFilter}>
+                        <SelectTrigger className="w-48">
+                          <SelectValue placeholder="جميع الحالات" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">جميع الحالات</SelectItem>
+                          {Object.entries(statusLabels).map(([value, label]) => (
+                            <SelectItem key={value} value={value}>
+                              {label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">فلتر حسب التاريخ:</span>
+                      <Input
+                        type="date"
+                        value={dateFilter}
+                        onChange={(e) => setDateFilter(e.target.value)}
+                        className="w-48"
+                      />
+                      {dateFilter && (
+                        <Button size="sm" variant="ghost" onClick={() => setDateFilter("")}>
+                          إلغاء
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">فلتر حسب التاريخ:</span>
-                    <Input
-                      type="date"
-                      value={dateFilter}
-                      onChange={(e) => setDateFilter(e.target.value)}
-                      className="w-48"
-                    />
-                    {dateFilter && (
-                      <Button size="sm" variant="ghost" onClick={() => setDateFilter("")}>
-                        إلغاء
+                  {selectedOrders.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">
+                        {selectedOrders.length} محدد
+                      </span>
+                      <Button onClick={handleExportExcel} size="sm" variant="outline">
+                        <Download className="ml-2 h-4 w-4" />
+                        تصدير Excel
                       </Button>
-                    )}
-                  </div>
-                </div>
+                      <Button onClick={handlePrintOrders} size="sm" variant="outline">
+                        <Printer className="ml-2 h-4 w-4" />
+                        طباعة
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </CardHeader>
@@ -399,6 +660,12 @@ const AgentOrders = () => {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        <TableHead>
+                          <Checkbox
+                            checked={selectedOrders.length === filteredOrders?.length}
+                            onCheckedChange={toggleSelectAll}
+                          />
+                        </TableHead>
                         <TableHead>رقم الأوردر</TableHead>
                         <TableHead>العميل</TableHead>
                         <TableHead>الهاتف</TableHead>
@@ -421,6 +688,12 @@ const AgentOrders = () => {
                         
                         return (
                           <TableRow key={order.id}>
+                            <TableCell>
+                              <Checkbox
+                                checked={selectedOrders.includes(order.id)}
+                                onCheckedChange={() => toggleOrderSelection(order.id)}
+                              />
+                            </TableCell>
                             <TableCell className="font-mono text-xs">
                               #{order.order_number || order.id.slice(0, 8)}
                             </TableCell>
@@ -528,6 +801,17 @@ const AgentOrders = () => {
                               variant="destructive"
                               size="sm"
                               onClick={() => {
+                                if (window.confirm("هل أنت متأكد من حذف الأوردر؟")) {
+                                  deleteOrderMutation.mutate(order.id);
+                                }
+                              }}
+                            >
+                              حذف
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
                                 if (window.confirm("هل أنت متأكد من إلغاء تعيين المندوب؟ سيتم إرجاع الأوردر إلى قائمة الأوردرات")) {
                                   unassignAgentMutation.mutate(order.id);
                                 }
@@ -545,10 +829,10 @@ const AgentOrders = () => {
                 
                 {/* Summary */}
                 <div className="mt-6 p-4 bg-accent rounded-lg space-y-2">
-                  <h3 className="font-bold mb-2">ملخص الأوردرات</h3>
+                  <h3 className="font-bold mb-2">ملخص مستحقات المندوب</h3>
                   <p>عدد الأوردرات: {filteredOrders.length}</p>
                   <p className="font-bold text-lg text-purple-600">
-                    الإجمالي (المنتجات + شحن العملاء): {filteredOrders.reduce((sum, order) => {
+                    إجمالي الأوردرات: {filteredOrders.reduce((sum, order) => {
                       const total = parseFloat(order.total_amount.toString());
                       const customerShipping = parseFloat(order.shipping_cost?.toString() || "0");
                       return sum + (total + customerShipping);
@@ -558,13 +842,28 @@ const AgentOrders = () => {
                     شحن المندوب (خصم): {filteredOrders.reduce((sum, order) => sum + parseFloat(order.agent_shipping_cost?.toString() || "0"), 0).toFixed(2)} ج.م
                   </p>
                   <p className="font-bold text-xl text-green-600">
-                    الصافي المطلوب من المندوب: {filteredOrders.reduce((sum, order) => {
+                    الصافي المطلوب من المندوب (من الأوردرات المعروضة): {filteredOrders.reduce((sum, order) => {
                       const total = parseFloat(order.total_amount.toString());
                       const customerShipping = parseFloat(order.shipping_cost?.toString() || "0");
                       const agentShipping = parseFloat(order.agent_shipping_cost?.toString() || "0");
                       return sum + (total + customerShipping - agentShipping);
                     }, 0).toFixed(2)} ج.م
                   </p>
+                  {agentPayments && (
+                    <>
+                      <hr className="my-3" />
+                      <h3 className="font-bold mb-2">إجمالي المستحقات (من قاعدة البيانات)</h3>
+                      <p className="font-bold text-xl text-blue-600">
+                        إجمالي المستحقات على المندوب: {parseFloat(agentPayments.total_owed?.toString() || "0").toFixed(2)} ج.م
+                      </p>
+                      <p className="font-bold text-lg text-green-600">
+                        إجمالي المدفوع: {parseFloat(agentPayments.total_paid?.toString() || "0").toFixed(2)} ج.م
+                      </p>
+                      <p className="font-bold text-xl text-red-600">
+                        المتبقي: {(parseFloat(agentPayments.total_owed?.toString() || "0") - parseFloat(agentPayments.total_paid?.toString() || "0")).toFixed(2)} ج.م
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -622,12 +921,30 @@ const AgentOrders = () => {
                   />
                 </div>
 
+                <div className="flex items-center space-x-2 space-x-reverse">
+                  <Checkbox
+                    id="remove-shipping"
+                    checked={returnData.removeShipping}
+                    onCheckedChange={(checked) => 
+                      setReturnData({ ...returnData, removeShipping: checked as boolean })
+                    }
+                  />
+                  <Label htmlFor="remove-shipping" className="cursor-pointer">
+                    مرتجع دون شحن (خصم الشحن من المستحقات)
+                  </Label>
+                </div>
+
                 <div className="p-4 bg-accent rounded-lg">
                   <p className="font-bold text-lg text-destructive">
                     قيمة المرتجع: {returnData.returned_items
                       .reduce((sum, item) => sum + (item.price * item.returned_quantity), 0)
                       .toFixed(2)} ج.م
                   </p>
+                  {returnData.removeShipping && selectedOrderForReturn && (
+                    <p className="font-bold text-sm text-orange-600 mt-2">
+                      سيتم خصم الشحن: {parseFloat(selectedOrderForReturn.shipping_cost?.toString() || "0").toFixed(2)} ج.م
+                    </p>
+                  )}
                 </div>
 
                 <Button onClick={handleSubmitReturn} className="w-full">
