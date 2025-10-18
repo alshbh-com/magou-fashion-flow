@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useCart } from "@/hooks/useCart";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -10,12 +10,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Minus, Plus, Trash2, ShoppingBag, ArrowLeft } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 const Cart = () => {
-  const { items, removeItem, updateQuantity, updateItemDetails, clearCart } = useCart();
+  const { items, removeItem, updateQuantity, updateItemDetails, clearCart, addItem } = useCart();
   const navigate = useNavigate();
+  const location = useLocation();
   const [loading, setLoading] = useState(false);
+  const [isReturnOrder, setIsReturnOrder] = useState(false);
+  const [returnOrderId, setReturnOrderId] = useState<string | null>(null);
+  const [returnOrderNumber, setReturnOrderNumber] = useState<number | null>(null);
+  const [returnOrderDate, setReturnOrderDate] = useState<string | null>(null);
   
   const [customerInfo, setCustomerInfo] = useState({
     name: "",
@@ -28,6 +33,47 @@ const Cart = () => {
     discount: 0,
     orderDetails: ""
   });
+
+  // Load return order data if navigated from AgentOrders
+  useEffect(() => {
+    const state = location.state as any;
+    if (state?.returnOrder && state?.isReturn) {
+      const order = state.returnOrder;
+      setIsReturnOrder(true);
+      setReturnOrderId(order.id);
+      setReturnOrderNumber(order.order_number);
+      setReturnOrderDate(order.created_at);
+      
+      // Clear cart and add order items
+      clearCart();
+      order.order_items?.forEach((item: any) => {
+        addItem({
+          id: item.product_id,
+          name: item.products?.name || '',
+          price: parseFloat(item.price?.toString() || "0"),
+          image_url: item.products?.image_url,
+          size: item.size,
+          color: item.color,
+          details: item.product_details
+        });
+        // Set correct quantity
+        updateQuantity(item.product_id, item.quantity);
+      });
+
+      // Set customer info
+      setCustomerInfo({
+        name: order.customers?.name || "",
+        phone: order.customers?.phone || "",
+        phone2: order.customers?.phone2 || "",
+        address: order.customers?.address || "",
+        governorate: order.customers?.governorate || "",
+        notes: order.notes || "",
+        shippingCost: parseFloat(order.shipping_cost?.toString() || "0"),
+        discount: parseFloat(order.discount?.toString() || "0"),
+        orderDetails: order.order_details || ""
+      });
+    }
+  }, [location.state]);
 
   const { data: products } = useQuery({
     queryKey: ["products"],
@@ -99,69 +145,121 @@ const Cart = () => {
     setLoading(true);
 
     try {
-      const { data: customer, error: customerError } = await supabase
-        .from("customers")
-        .insert({
-          name: customerInfo.name,
-          phone: customerInfo.phone,
-          phone2: customerInfo.phone2 || null,
-          address: customerInfo.address,
-          governorate: customerInfo.governorate
-        })
-        .select()
-        .single();
+      if (isReturnOrder && returnOrderId) {
+        // Update existing order
+        const { error: orderError } = await supabase
+          .from("orders")
+          .update({
+            total_amount: getTotalPrice(),
+            shipping_cost: customerInfo.shippingCost,
+            discount: customerInfo.discount,
+            order_details: customerInfo.orderDetails || null,
+            notes: customerInfo.notes,
+          })
+          .eq("id", returnOrderId);
 
-      if (customerError) throw customerError;
+        if (orderError) throw orderError;
 
-      const { data: order, error: orderError } = await supabase
-        .from("orders")
-        .insert({
-          customer_id: customer.id,
-          total_amount: getTotalPrice(),
-          shipping_cost: customerInfo.shippingCost,
-          discount: customerInfo.discount,
-          order_details: customerInfo.orderDetails || null,
-          notes: customerInfo.notes,
-          status: "pending"
-        })
-        .select()
-        .single();
+        // Delete old order items
+        const { error: deleteError } = await supabase
+          .from("order_items")
+          .delete()
+          .eq("order_id", returnOrderId);
 
-      if (orderError) throw orderError;
+        if (deleteError) throw deleteError;
 
-      const orderItems = items.map(item => {
-        const price = getProductPrice(item.id, item.quantity);
-        
-        return {
-          order_id: order.id,
-          product_id: item.id,
-          quantity: item.quantity,
-          price: price,
-          size: item.size || null,
-          color: item.color || null,
-          product_details: item.details || null
-        };
-      });
+        // Insert new order items
+        const orderItems = items.map(item => {
+          const price = getProductPrice(item.id, item.quantity);
+          
+          return {
+            order_id: returnOrderId,
+            product_id: item.id,
+            quantity: item.quantity,
+            price: price,
+            size: item.size || null,
+            color: item.color || null,
+            product_details: item.details || null
+          };
+        });
 
-      const { error: itemsError } = await supabase
-        .from("order_items")
-        .insert(orderItems);
+        const { error: itemsError } = await supabase
+          .from("order_items")
+          .insert(orderItems);
 
-      if (itemsError) throw itemsError;
+        if (itemsError) throw itemsError;
 
-      toast.success("تم إرسال الطلب بنجاح!");
-      clearCart();
-      setCustomerInfo({
-        name: "",
-        phone: "",
-        phone2: "",
-        address: "",
-        governorate: "",
-        notes: "",
-        shippingCost: 0,
-        discount: 0,
-        orderDetails: ""
-      });
+        toast.success("تم تحديث الأوردر بنجاح!");
+        clearCart();
+        setIsReturnOrder(false);
+        setReturnOrderId(null);
+        navigate('/admin/agent-orders');
+      } else {
+        // Create new order
+        const { data: customer, error: customerError } = await supabase
+          .from("customers")
+          .insert({
+            name: customerInfo.name,
+            phone: customerInfo.phone,
+            phone2: customerInfo.phone2 || null,
+            address: customerInfo.address,
+            governorate: customerInfo.governorate
+          })
+          .select()
+          .single();
+
+        if (customerError) throw customerError;
+
+        const { data: order, error: orderError } = await supabase
+          .from("orders")
+          .insert({
+            customer_id: customer.id,
+            total_amount: getTotalPrice(),
+            shipping_cost: customerInfo.shippingCost,
+            discount: customerInfo.discount,
+            order_details: customerInfo.orderDetails || null,
+            notes: customerInfo.notes,
+            status: "pending"
+          })
+          .select()
+          .single();
+
+        if (orderError) throw orderError;
+
+        const orderItems = items.map(item => {
+          const price = getProductPrice(item.id, item.quantity);
+          
+          return {
+            order_id: order.id,
+            product_id: item.id,
+            quantity: item.quantity,
+            price: price,
+            size: item.size || null,
+            color: item.color || null,
+            product_details: item.details || null
+          };
+        });
+
+        const { error: itemsError } = await supabase
+          .from("order_items")
+          .insert(orderItems);
+
+        if (itemsError) throw itemsError;
+
+        toast.success("تم إرسال الطلب بنجاح!");
+        clearCart();
+        setCustomerInfo({
+          name: "",
+          phone: "",
+          phone2: "",
+          address: "",
+          governorate: "",
+          notes: "",
+          shippingCost: 0,
+          discount: 0,
+          orderDetails: ""
+        });
+      }
       
     } catch (error: any) {
       console.error("Error submitting order:", error);
@@ -191,7 +289,15 @@ const Cart = () => {
           <ArrowLeft className="ml-2 h-5 w-5" />
           الرجوع للمتجر
         </Button>
-        <h1 className="text-4xl font-bold mb-8 text-center">فاتورة الطلب</h1>
+        <h1 className="text-4xl font-bold mb-8 text-center">
+          {isReturnOrder ? `تعديل الأوردر #${returnOrderNumber}` : 'فاتورة الطلب'}
+        </h1>
+        {isReturnOrder && (
+          <div className="bg-yellow-100 border border-yellow-400 text-yellow-800 px-4 py-3 rounded mb-4 text-center">
+            <p className="font-bold">تعديل أوردر مرتجع</p>
+            <p className="text-sm">سيتم تحديث الأوردر بنفس الرقم ({returnOrderNumber}) والتاريخ ({new Date(returnOrderDate!).toLocaleDateString('ar-EG')})</p>
+          </div>
+        )}
 
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Cart Items */}

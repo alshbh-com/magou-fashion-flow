@@ -11,9 +11,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ArrowLeft, PackageX, Printer, Download } from "lucide-react";
+import { ArrowLeft, PackageX, Printer, Download, AlertTriangle, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import * as XLSX from 'xlsx';
 
 const statusLabels: Record<string, string> = {
@@ -41,6 +42,10 @@ const AgentOrders = () => {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
+  const [confirmReturnDialogOpen, setConfirmReturnDialogOpen] = useState(false);
+  const [pendingReturnOrder, setPendingReturnOrder] = useState<any>(null);
+  const [bulkStatusDialogOpen, setBulkStatusDialogOpen] = useState(false);
+  const [bulkStatus, setBulkStatus] = useState<string>("");
   const [selectedOrderForReturn, setSelectedOrderForReturn] = useState<any>(null);
   const [returnData, setReturnData] = useState({
     returned_items: [] as any[],
@@ -235,7 +240,28 @@ const AgentOrders = () => {
 
   const deleteOrderMutation = useMutation({
     mutationFn: async (orderId: string) => {
-      // Delete order_items first
+      // First, get the order details to check agent assignment
+      const { data: order, error: orderFetchError } = await supabase
+        .from("orders")
+        .select("delivery_agent_id, total_amount, shipping_cost, agent_shipping_cost")
+        .eq("id", orderId)
+        .maybeSingle();
+      
+      if (orderFetchError) throw orderFetchError;
+
+      // Delete agent_payments related to this order
+      await supabase
+        .from("agent_payments")
+        .delete()
+        .eq("order_id", orderId);
+
+      // Delete returns related to this order
+      await supabase
+        .from("returns")
+        .delete()
+        .eq("order_id", orderId);
+
+      // Delete order items
       const { error: itemsError } = await supabase
         .from("order_items")
         .delete()
@@ -243,7 +269,31 @@ const AgentOrders = () => {
       
       if (itemsError) throw itemsError;
 
-      // Delete order
+      // Update agent's total_owed if agent was assigned
+      if (order && order.delivery_agent_id) {
+        const owedAmount = parseFloat(order.total_amount?.toString() || "0") + 
+                          parseFloat(order.shipping_cost?.toString() || "0") - 
+                          parseFloat(order.agent_shipping_cost?.toString() || "0");
+        
+        // Get current total_owed
+        const { data: agentData, error: fetchError } = await supabase
+          .from("delivery_agents")
+          .select("total_owed")
+          .eq("id", order.delivery_agent_id)
+          .maybeSingle();
+        
+        if (!fetchError && agentData) {
+          const currentOwed = parseFloat(agentData.total_owed?.toString() || "0");
+          const newOwed = currentOwed - owedAmount;
+          
+          await supabase
+            .from("delivery_agents")
+            .update({ total_owed: newOwed })
+            .eq("id", order.delivery_agent_id);
+        }
+      }
+
+      // Delete the order
       const { error } = await supabase
         .from("orders")
         .delete()
@@ -258,6 +308,10 @@ const AgentOrders = () => {
       queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
       queryClient.invalidateQueries({ queryKey: ["agent_payments"] });
       toast.success("تم حذف الأوردر");
+    },
+    onError: (error) => {
+      console.error("Error deleting order:", error);
+      toast.error("حدث خطأ أثناء حذف الأوردر");
     },
   });
 
@@ -451,6 +505,29 @@ const AgentOrders = () => {
     printWindow.print();
   };
 
+  const handleBulkStatusUpdate = async () => {
+    if (selectedOrders.length === 0 || !bulkStatus) {
+      toast.error("الرجاء تحديد أوردرات وحالة");
+      return;
+    }
+
+    try {
+      for (const orderId of selectedOrders) {
+        await updateStatusMutation.mutateAsync({
+          id: orderId,
+          status: bulkStatus,
+        });
+      }
+      setSelectedOrders([]);
+      setBulkStatusDialogOpen(false);
+      setBulkStatus("");
+      toast.success("تم تحديث حالة الأوردرات بنجاح");
+    } catch (error) {
+      console.error("Error updating bulk status:", error);
+      toast.error("حدث خطأ أثناء تحديث الحالات");
+    }
+  };
+
   const handleReturnQuantityChange = (index: number, value: number) => {
     const newItems = [...returnData.returned_items];
     newItems[index].returned_quantity = Math.min(value, newItems[index].total_quantity);
@@ -629,7 +706,7 @@ const AgentOrders = () => {
                       )}
                     </div>
                   </div>
-                  {selectedOrders.length > 0 && (
+                   {selectedOrders.length > 0 && (
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-muted-foreground">
                         {selectedOrders.length} محدد
@@ -641,6 +718,13 @@ const AgentOrders = () => {
                       <Button onClick={handlePrintOrders} size="sm" variant="outline">
                         <Printer className="ml-2 h-4 w-4" />
                         طباعة
+                      </Button>
+                      <Button 
+                        onClick={() => setBulkStatusDialogOpen(true)} 
+                        size="sm" 
+                        variant="default"
+                      >
+                        تغيير الحالة للمحدد
                       </Button>
                     </div>
                   )}
@@ -792,7 +876,10 @@ const AgentOrders = () => {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleOpenReturnDialog(order)}
+                              onClick={() => {
+                                setPendingReturnOrder(order);
+                                setConfirmReturnDialogOpen(true);
+                              }}
                             >
                               <PackageX className="ml-2 h-4 w-4" />
                               مرتجع
@@ -806,7 +893,7 @@ const AgentOrders = () => {
                                 }
                               }}
                             >
-                              حذف
+                              <Trash2 className="h-4 w-4" />
                             </Button>
                             <Button
                               variant="outline"
@@ -869,6 +956,73 @@ const AgentOrders = () => {
             )}
           </CardContent>
         </Card>
+
+        {/* Confirm Return Dialog */}
+        <AlertDialog open={confirmReturnDialogOpen} onOpenChange={setConfirmReturnDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-yellow-500" />
+                تأكيد المرتجع
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                هل تريد إرسال هذا الأوردر إلى السلة لتعديله؟ سيتم نقله إلى صفحة السلة حيث يمكنك تقليل أو زيادة الكميات ثم تأكيد الأوردر بنفس الرقم والتاريخ.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>إلغاء</AlertDialogCancel>
+              <AlertDialogAction onClick={() => {
+                if (pendingReturnOrder) {
+                  // Navigate to cart with order data
+                  navigate('/cart', { 
+                    state: { 
+                      returnOrder: pendingReturnOrder,
+                      isReturn: true 
+                    } 
+                  });
+                }
+                setConfirmReturnDialogOpen(false);
+                setPendingReturnOrder(null);
+              }}>
+                تأكيد ونقل للسلة
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Bulk Status Update Dialog */}
+        <Dialog open={bulkStatusDialogOpen} onOpenChange={setBulkStatusDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>تحديث حالة الأوردرات المحددة</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <p className="text-sm text-muted-foreground">
+                تم تحديد {selectedOrders.length} أوردر. اختر الحالة الجديدة:
+              </p>
+              <Select value={bulkStatus} onValueChange={setBulkStatus}>
+                <SelectTrigger>
+                  <SelectValue placeholder="اختر الحالة" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(statusLabels).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setBulkStatusDialogOpen(false)}>
+                إلغاء
+              </Button>
+              <Button onClick={handleBulkStatusUpdate} disabled={!bulkStatus}>
+                تحديث
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Return Dialog */}
         <Dialog open={returnDialogOpen} onOpenChange={setReturnDialogOpen}>

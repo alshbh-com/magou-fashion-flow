@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,13 +9,16 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
 const AllOrders = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState<string>("");
   const [governorateFilter, setGovernorateFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [editingStatus, setEditingStatus] = useState<{orderId: string, currentStatus: string} | null>(null);
 
   const { data: orders, isLoading } = useQuery({
     queryKey: ["all-orders"],
@@ -74,10 +77,82 @@ const AllOrders = () => {
       cancelled: "ملغي",
       returned: "مرتجع",
       partially_returned: "مرتجع جزئي",
-      delivered_with_modification: "تم التوصيل مع التعديل"
+      delivered_with_modification: "تم التوصيل مع التعديل",
+      return_no_shipping: "مرتجع دون شحن"
     };
     return texts[status] || status;
   };
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ orderId, newStatus, oldStatus, order }: { 
+      orderId: string; 
+      newStatus: string; 
+      oldStatus: string;
+      order: any;
+    }) => {
+      // If changing from delivered/returned back to shipped, update agent totals
+      if ((oldStatus === 'delivered' || oldStatus === 'returned' || oldStatus === 'partially_returned') && newStatus === 'shipped') {
+        if (order.delivery_agent_id) {
+          const owedAmount = parseFloat(order.total_amount?.toString() || "0") + 
+                            parseFloat(order.shipping_cost?.toString() || "0") - 
+                            parseFloat(order.agent_shipping_cost?.toString() || "0");
+          
+          // Get current total_owed
+          const { data: agentData, error: fetchError } = await supabase
+            .from("delivery_agents")
+            .select("total_owed")
+            .eq("id", order.delivery_agent_id)
+            .single();
+          
+          if (fetchError) throw fetchError;
+          
+          const currentOwed = parseFloat(agentData.total_owed?.toString() || "0");
+          const newOwed = currentOwed + owedAmount;
+          
+          // Add back to agent's total_owed
+          const { error: agentError } = await supabase
+            .from("delivery_agents")
+            .update({ 
+              total_owed: newOwed
+            })
+            .eq("id", order.delivery_agent_id);
+          
+          if (agentError) throw agentError;
+
+          // Create a new payment record
+          const { error: paymentError } = await supabase
+            .from("agent_payments")
+            .insert({
+              delivery_agent_id: order.delivery_agent_id,
+              order_id: orderId,
+              amount: owedAmount,
+              payment_type: 'owed',
+              notes: `إعادة تعيين طلب رقم ${order.order_number} من ${getStatusText(oldStatus)} إلى تم الشحن`
+            });
+          
+          if (paymentError) throw paymentError;
+        }
+      }
+
+      // Update order status
+      const { error } = await supabase
+        .from("orders")
+        .update({ status: newStatus as any })
+        .eq("id", orderId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["all-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["agent-orders"] });
+      toast.success("تم تحديث حالة الأوردر بنجاح");
+      setEditingStatus(null);
+    },
+    onError: (error) => {
+      console.error("Error updating status:", error);
+      toast.error("حدث خطأ أثناء تحديث الحالة");
+    },
+  });
 
   const filteredOrders = orders?.filter(order => {
     if (statusFilter !== "all" && order.status !== statusFilter) return false;
@@ -192,6 +267,7 @@ const AllOrders = () => {
                       <TableHead>الحالة</TableHead>
                       <TableHead>الملاحظات</TableHead>
                       <TableHead>التاريخ</TableHead>
+                      <TableHead>إجراءات</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -238,13 +314,68 @@ const AllOrders = () => {
                             )}
                           </TableCell>
                           <TableCell>
-                            <Badge className={getStatusColor(order.status)}>
-                              {getStatusText(order.status)}
-                            </Badge>
+                            {editingStatus?.orderId === order.id ? (
+                              <Select
+                                value={editingStatus.currentStatus}
+                                onValueChange={(value) => setEditingStatus({ orderId: order.id, currentStatus: value })}
+                              >
+                                <SelectTrigger className="w-48">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="pending">قيد الانتظار</SelectItem>
+                                  <SelectItem value="processing">قيد التنفيذ</SelectItem>
+                                  <SelectItem value="shipped">تم الشحن</SelectItem>
+                                  <SelectItem value="delivered">تم التوصيل</SelectItem>
+                                  <SelectItem value="cancelled">ملغي</SelectItem>
+                                  <SelectItem value="returned">مرتجع</SelectItem>
+                                  <SelectItem value="partially_returned">مرتجع جزئي</SelectItem>
+                                  <SelectItem value="return_no_shipping">مرتجع دون شحن</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Badge className={getStatusColor(order.status)}>
+                                {getStatusText(order.status)}
+                              </Badge>
+                            )}
                           </TableCell>
                           <TableCell className="max-w-xs truncate">{order.notes || "-"}</TableCell>
                           <TableCell className="text-xs">
                             {new Date(order.created_at).toLocaleDateString("ar-EG")}
+                          </TableCell>
+                          <TableCell>
+                            {editingStatus?.orderId === order.id ? (
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    updateStatusMutation.mutate({
+                                      orderId: order.id,
+                                      newStatus: editingStatus.currentStatus,
+                                      oldStatus: order.status,
+                                      order: order
+                                    });
+                                  }}
+                                >
+                                  حفظ
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setEditingStatus(null)}
+                                >
+                                  إلغاء
+                                </Button>
+                              </div>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setEditingStatus({ orderId: order.id, currentStatus: order.status })}
+                              >
+                                تعديل الحالة
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                       );
