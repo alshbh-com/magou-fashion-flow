@@ -73,19 +73,37 @@ const Agents = () => {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
+      // فك الارتباطات أولًا لتجنب قيود العلاقات ثم احذف المندوب
+      const { error: ordersErr } = await supabase
+        .from("orders")
+        .update({ delivery_agent_id: null })
+        .eq("delivery_agent_id", id);
+      if (ordersErr) throw ordersErr;
+
+      const { error: returnsErr } = await supabase
+        .from("returns")
+        .update({ delivery_agent_id: null })
+        .eq("delivery_agent_id", id);
+      if (returnsErr) throw returnsErr;
+
+      const { error: paymentsErr } = await supabase
+        .from("agent_payments")
+        .delete()
+        .eq("delivery_agent_id", id);
+      if (paymentsErr) throw paymentsErr;
+
       const { error } = await supabase
         .from("delivery_agents")
         .delete()
         .eq("id", id);
-      
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
       toast.success("تم حذف المندوب بنجاح");
     },
-    onError: () => {
-      toast.error("حدث خطأ أثناء الحذف");
+    onError: (e: any) => {
+      toast.error(`حدث خطأ أثناء الحذف: ${e?.message || ''}`);
     }
   });
 
