@@ -74,36 +74,67 @@ const Invoices = () => {
       const totalAmount = parseFloat(order.total_amount.toString());
       const customerShipping = parseFloat((order.shipping_cost || 0).toString());
       const agentShipping = parseFloat((order.agent_shipping_cost || 0).toString());
-      const totalPrice = totalAmount + customerShipping; // الإجمالي
-      const netAmount = totalPrice - agentShipping; // الصافي
+      const discount = parseFloat((order.discount || 0).toString());
+      const totalPrice = totalAmount + customerShipping;
+      const netAmount = totalPrice - agentShipping;
       
       return `
       <div style="width: 148mm; height: 210mm; padding: 10mm; page-break-after: always; font-family: Arial;">
-        <h2 style="text-align: center;">Magou Fashion</h2>
+        <div style="text-align: center; margin-bottom: 15px;">
+          <img src="/images/magou-logo.jpg" alt="Magou Fashion Logo" style="max-width: 120px; height: auto;" />
+        </div>
+        <h2 style="text-align: center; margin: 5px 0;">فاتورة</h2>
         <hr/>
-        <p><strong>رقم الأوردر:</strong> ${order.order_number || order.id.slice(0, 8)}</p>
-        <p><strong>العميل:</strong> ${order.customers?.name}</p>
-        <p><strong>الهاتف:</strong> ${order.customers?.phone}</p>
-        <p><strong>العنوان:</strong> ${order.customers?.address}</p>
-        <p><strong>المحافظة:</strong> ${order.customers?.governorate || "-"}</p>
+        <div style="margin: 10px 0; line-height: 1.6;">
+          <p><strong>رقم الأوردر:</strong> #${order.order_number || order.id.slice(0, 8)}</p>
+          <p><strong>التاريخ:</strong> ${new Date(order.created_at).toLocaleDateString('ar-EG')}</p>
+          <p><strong>العميل:</strong> ${order.customers?.name}</p>
+          <p><strong>الهاتف:</strong> ${order.customers?.phone}</p>
+          <p><strong>الهاتف 2:</strong> ${(order.customers as any)?.phone2 || '-'}</p>
+          <p><strong>المحافظة:</strong> ${order.customers?.governorate || "-"}</p>
+          <p><strong>العنوان بالتفصيل:</strong> ${order.customers?.address}</p>
+          ${order.notes ? `<p><strong>ملاحظات:</strong> ${order.notes}</p>` : ''}
+        </div>
         <hr/>
         <table style="width: 100%; border-collapse: collapse;">
-          <tr><th style="border: 1px solid #000; padding: 5px;">المنتج</th><th style="border: 1px solid #000; padding: 5px;">الكمية</th><th style="border: 1px solid #000; padding: 5px;">السعر</th></tr>
+          <tr>
+            <th style="border: 1px solid #000; padding: 5px; background-color: #f2f2f2;">المنتج</th>
+            <th style="border: 1px solid #000; padding: 5px; background-color: #f2f2f2;">الكمية</th>
+            <th style="border: 1px solid #000; padding: 5px; background-color: #f2f2f2;">السعر</th>
+            <th style="border: 1px solid #000; padding: 5px; background-color: #f2f2f2;">الإجمالي</th>
+          </tr>
           ${order.order_items?.map((item: any) => `
-            <tr><td style="border: 1px solid #000; padding: 5px;">${item.products?.name}</td><td style="border: 1px solid #000; padding: 5px;">${item.quantity}</td><td style="border: 1px solid #000; padding: 5px;">${parseFloat(item.price.toString()).toFixed(2)} ج.م</td></tr>
+            <tr>
+              <td style="border: 1px solid #000; padding: 5px;">${item.products?.name}</td>
+              <td style="border: 1px solid #000; padding: 5px;">${item.quantity}</td>
+              <td style="border: 1px solid #000; padding: 5px;">${parseFloat(item.price.toString()).toFixed(2)} ج.م</td>
+              <td style="border: 1px solid #000; padding: 5px;">${(parseFloat(item.price.toString()) * item.quantity).toFixed(2)} ج.م</td>
+            </tr>
           `).join('')}
         </table>
         <hr/>
-        <p style="text-align: left; font-size: 16px;"><strong>سعر المنتجات: ${totalAmount.toFixed(2)} ج.م</strong></p>
-        <p style="text-align: left; font-size: 16px;"><strong>شحن العميل: ${customerShipping.toFixed(2)} ج.م</strong></p>
-        <p style="text-align: left; font-size: 18px;"><strong>الإجمالي: ${totalPrice.toFixed(2)} ج.م</strong></p>
-        <hr/>
-        <p style="text-align: left; font-size: 16px;"><strong>شحن المندوب (خصم): ${agentShipping.toFixed(2)} ج.م</strong></p>
-        <p style="text-align: left; font-size: 20px; color: green;"><strong>الصافي المطلوب من المندوب: ${netAmount.toFixed(2)} ج.م</strong></p>
+        <div style="line-height: 1.8;">
+          <p style="font-size: 14px;"><strong>سعر المنتجات:</strong> ${totalAmount.toFixed(2)} ج.م</p>
+          <p style="font-size: 14px;"><strong>شحن العميل:</strong> ${customerShipping.toFixed(2)} ج.م</p>
+          ${discount > 0 ? `<p style="font-size: 14px;"><strong>خصم:</strong> ${discount.toFixed(2)} ج.م</p>` : ''}
+          <p style="font-size: 16px;"><strong>الإجمالي:</strong> ${totalPrice.toFixed(2)} ج.م</p>
+          <p style="font-size: 14px;"><strong>شحن المندوب:</strong> ${agentShipping.toFixed(2)} ج.م</p>
+          <p style="font-size: 18px; color: green;"><strong>الصافي المطلوب من المندوب:</strong> ${netAmount.toFixed(2)} ج.م</p>
+        </div>
       </div>
     `;}).join('');
 
-    printWindow.document.write(`<html><head><title>طباعة الفواتير</title></head><body>${invoicesHTML}</body></html>`);
+    printWindow.document.write(`
+      <html dir="rtl">
+        <head>
+          <title>طباعة الفواتير</title>
+          <style>
+            body { font-family: Arial, sans-serif; }
+          </style>
+        </head>
+        <body>${invoicesHTML}</body>
+      </html>
+    `);
     printWindow.document.close();
     printWindow.print();
   };

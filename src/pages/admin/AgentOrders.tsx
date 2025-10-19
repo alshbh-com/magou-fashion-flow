@@ -450,19 +450,28 @@ const AgentOrders = () => {
       const customerShipping = parseFloat(order.shipping_cost?.toString() || "0");
       const agentShipping = parseFloat(order.agent_shipping_cost?.toString() || "0");
       const totalAmount = parseFloat(order.total_amount.toString());
+      const discount = parseFloat(order.discount?.toString() || "0");
       const totalPrice = totalAmount + customerShipping;
       const netAmount = totalPrice - agentShipping;
 
       return `
         <div style="page-break-after: always; padding: 20px;">
-          <h1 style="text-align: center;">فاتورة</h1>
-          <div style="margin: 20px 0;">
+          <div style="text-align: center; margin-bottom: 20px;">
+            <img src="/images/magou-logo.jpg" alt="Magou Fashion Logo" style="max-width: 150px; height: auto;" />
+          </div>
+          <h1 style="text-align: center; margin: 10px 0;">فاتورة</h1>
+          <hr style="border: 1px solid #ddd; margin: 20px 0;"/>
+          <div style="margin: 20px 0; line-height: 1.8;">
             <p><strong>رقم الأوردر:</strong> #${order.order_number || order.id.slice(0, 8)}</p>
+            <p><strong>التاريخ:</strong> ${new Date(order.created_at).toLocaleDateString('ar-EG')}</p>
             <p><strong>اسم العميل:</strong> ${order.customers?.name}</p>
             <p><strong>الهاتف:</strong> ${order.customers?.phone}</p>
-            <p><strong>العنوان:</strong> ${order.customers?.address}</p>
+            <p><strong>الهاتف 2:</strong> ${(order.customers as any)?.phone2 || '-'}</p>
             <p><strong>المحافظة:</strong> ${order.customers?.governorate || '-'}</p>
+            <p><strong>العنوان بالتفصيل:</strong> ${order.customers?.address}</p>
+            ${order.notes ? `<p><strong>ملاحظات:</strong> ${order.notes}</p>` : ''}
           </div>
+          <hr style="border: 1px solid #ddd; margin: 20px 0;"/>
           <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
             <thead>
               <tr>
@@ -476,10 +485,14 @@ const AgentOrders = () => {
               ${orderItems}
             </tbody>
           </table>
-          <div style="margin-top: 20px;">
-            <p style="font-size: 18px; font-weight: bold;"><strong>الإجمالي:</strong> ${totalPrice.toFixed(2)} ج.م</p>
-            <p style="font-size: 16px;"><strong>شحن المندوب:</strong> ${agentShipping.toFixed(2)} ج.م</p>
-            <p style="font-size: 18px; font-weight: bold;"><strong>المطلوب من المندوب:</strong> ${netAmount.toFixed(2)} ج.م</p>
+          <hr style="border: 1px solid #ddd; margin: 20px 0;"/>
+          <div style="margin-top: 20px; line-height: 2;">
+            <p><strong>سعر المنتجات:</strong> ${totalAmount.toFixed(2)} ج.م</p>
+            <p><strong>شحن العميل:</strong> ${customerShipping.toFixed(2)} ج.م</p>
+            ${discount > 0 ? `<p><strong>خصم:</strong> ${discount.toFixed(2)} ج.م</p>` : ''}
+            <p style="font-size: 18px;"><strong>الإجمالي:</strong> ${totalPrice.toFixed(2)} ج.م</p>
+            <p><strong>شحن المندوب:</strong> ${agentShipping.toFixed(2)} ج.م</p>
+            <p style="font-size: 20px; font-weight: bold; color: green;">المطلوب من المندوب: ${netAmount.toFixed(2)} ج.م</p>
           </div>
         </div>
       `;
@@ -592,28 +605,48 @@ const AgentOrders = () => {
       </tr>
     `).join('');
 
+    const customerShipping = parseFloat(order.shipping_cost?.toString() || "0");
+    const agentShipping = parseFloat(order.agent_shipping_cost?.toString() || "0");
+    const totalAmount = parseFloat(order.total_amount.toString());
+    const discount = parseFloat(order.discount?.toString() || "0");
+    const totalPrice = totalAmount + customerShipping;
+    const netAmount = totalPrice - agentShipping;
+
     printWindow.document.write(`
       <html dir="rtl">
         <head>
-          <title>فاتورة - ${order.id.slice(0, 8)}</title>
+          <title>فاتورة - ${order.order_number || order.id.slice(0, 8)}</title>
           <style>
             body { font-family: Arial, sans-serif; padding: 20px; }
-            h1 { text-align: center; }
+            .logo { text-align: center; margin-bottom: 20px; }
+            .logo img { max-width: 150px; height: auto; }
+            h1 { text-align: center; margin: 10px 0; }
             table { width: 100%; border-collapse: collapse; margin-top: 20px; }
             th, td { border: 1px solid #ddd; padding: 12px; text-align: right; }
             th { background-color: #f2f2f2; }
-            .info { margin: 20px 0; }
-            .total { font-size: 18px; font-weight: bold; margin-top: 20px; }
+            .info { margin: 20px 0; line-height: 1.8; }
+            .total { font-size: 16px; margin-top: 20px; line-height: 2; }
+            .final-total { font-size: 20px; font-weight: bold; color: green; }
+            hr { border: 1px solid #ddd; margin: 20px 0; }
           </style>
         </head>
         <body>
+          <div class="logo">
+            <img src="/images/magou-logo.jpg" alt="Magou Fashion Logo" />
+          </div>
           <h1>فاتورة</h1>
+          <hr/>
           <div class="info">
-            <p><strong>رقم الأوردر:</strong> ${order.id.slice(0, 8)}</p>
+            <p><strong>رقم الأوردر:</strong> #${order.order_number || order.id.slice(0, 8)}</p>
+            <p><strong>التاريخ:</strong> ${new Date(order.created_at).toLocaleDateString('ar-EG')}</p>
             <p><strong>اسم العميل:</strong> ${order.customers?.name}</p>
             <p><strong>الهاتف:</strong> ${order.customers?.phone}</p>
-            <p><strong>العنوان:</strong> ${order.customers?.address}</p>
+            <p><strong>الهاتف 2:</strong> ${(order.customers as any)?.phone2 || '-'}</p>
+            <p><strong>المحافظة:</strong> ${order.customers?.governorate || '-'}</p>
+            <p><strong>العنوان بالتفصيل:</strong> ${order.customers?.address}</p>
+            ${order.notes ? `<p><strong>ملاحظات:</strong> ${order.notes}</p>` : ''}
           </div>
+          <hr/>
           <table>
             <thead>
               <tr>
@@ -627,8 +660,14 @@ const AgentOrders = () => {
               ${orderItems}
             </tbody>
           </table>
+          <hr/>
           <div class="total">
-            الإجمالي الكلي: ${parseFloat(order.total_amount.toString()).toFixed(2)} ج.م
+            <p><strong>سعر المنتجات:</strong> ${totalAmount.toFixed(2)} ج.م</p>
+            <p><strong>شحن العميل:</strong> ${customerShipping.toFixed(2)} ج.م</p>
+            ${discount > 0 ? `<p><strong>خصم:</strong> ${discount.toFixed(2)} ج.م</p>` : ''}
+            <p style="font-size: 18px;"><strong>الإجمالي:</strong> ${totalPrice.toFixed(2)} ج.م</p>
+            <p><strong>شحن المندوب:</strong> ${agentShipping.toFixed(2)} ج.م</p>
+            <p class="final-total">المطلوب من المندوب: ${netAmount.toFixed(2)} ج.م</p>
           </div>
         </body>
       </html>
