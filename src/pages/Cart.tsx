@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Minus, Plus, Trash2, ShoppingBag, ArrowLeft } from "lucide-react";
+import { Minus, Plus, Trash2, ShoppingBag, ArrowLeft, Home } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -271,31 +271,48 @@ const Cart = () => {
 
   if (items.length === 0) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-background to-accent/20 flex items-center justify-center">
-        <div className="text-center">
-          <ShoppingBag className="w-24 h-24 mx-auto text-muted-foreground mb-4" />
-          <h2 className="text-2xl font-bold mb-2">السلة فارغة</h2>
-          <p className="text-muted-foreground mb-6">أضف بعض المنتجات للبدء</p>
-          <Button onClick={() => navigate("/")}>تصفح المنتجات</Button>
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="text-center max-w-md">
+          <div className="gradient-primary rounded-full w-32 h-32 mx-auto flex items-center justify-center mb-6 shadow-glow">
+            <ShoppingBag className="w-16 h-16 text-white" />
+          </div>
+          <h2 className="text-4xl font-black mb-3 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">السلة فارغة</h2>
+          <p className="text-muted-foreground mb-8 text-lg">ابدأ التسوق وأضف منتجاتك المفضلة!</p>
+          <Button 
+            onClick={() => navigate("/")} 
+            className="gradient-primary text-white font-bold text-lg px-8 py-6 rounded-xl shadow-glow hover:scale-105 transition-all"
+          >
+            <Home className="ml-2 h-5 w-5" />
+            تصفح المنتجات
+          </Button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-background to-accent/20 py-8">
-      <div className="container mx-auto px-4 max-w-6xl">
-        <Button onClick={() => navigate("/")} variant="ghost" className="mb-4 text-lg">
+    <div className="min-h-screen py-8">
+      <div className="container mx-auto px-4 max-w-7xl">
+        <Button 
+          onClick={() => navigate("/")} 
+          variant="ghost" 
+          className="mb-6 text-lg hover:bg-primary/10 hover:text-primary transition-all px-6 py-6 rounded-xl font-bold"
+        >
           <ArrowLeft className="ml-2 h-5 w-5" />
           الرجوع للمتجر
         </Button>
-        <h1 className="text-4xl font-bold mb-8 text-center">
-          {isReturnOrder ? `تعديل الأوردر #${returnOrderNumber}` : 'فاتورة الطلب'}
-        </h1>
+        
+        <div className="text-center mb-10">
+          <h1 className="text-5xl font-black mb-3 bg-gradient-to-r from-primary via-secondary to-accent bg-clip-text text-transparent">
+            {isReturnOrder ? `تعديل الأوردر #${returnOrderNumber}` : '🛒 سلة التسوق'}
+          </h1>
+          <p className="text-muted-foreground text-lg">أكمل طلبك واحصل على منتجاتك المفضلة</p>
+        </div>
+        
         {isReturnOrder && (
-          <div className="bg-yellow-100 border border-yellow-400 text-yellow-800 px-4 py-3 rounded mb-4 text-center">
-            <p className="font-bold">تعديل أوردر مرتجع</p>
-            <p className="text-sm">سيتم تحديث الأوردر بنفس الرقم ({returnOrderNumber}) والتاريخ ({new Date(returnOrderDate!).toLocaleDateString('ar-EG')})</p>
+          <div className="gradient-secondary text-white px-6 py-4 rounded-2xl mb-6 text-center shadow-glow max-w-2xl mx-auto">
+            <p className="font-bold text-xl mb-1">⚠️ تعديل أوردر مرتجع</p>
+            <p className="text-sm opacity-90">سيتم تحديث الأوردر بنفس الرقم ({returnOrderNumber}) والتاريخ ({new Date(returnOrderDate!).toLocaleDateString('ar-EG')})</p>
           </div>
         )}
 
@@ -303,11 +320,11 @@ const Cart = () => {
           {/* Cart Items */}
           <div className="lg:col-span-2 space-y-6">
             {items.map((item) => (
-              <Card key={item.id} className="shadow-lg border-2">
-                <CardContent className="p-8">
-                  <div className="flex gap-6">
+              <Card key={item.id} className="shadow-glow border-2 border-border/50 hover:border-primary/50 transition-all duration-300 bg-card/90 backdrop-blur-sm">
+                <CardContent className="p-6">
+                  <div className="flex gap-5">
                     {/* Product Image */}
-                    <div className="w-32 h-32 bg-muted rounded-lg overflow-hidden flex-shrink-0">
+                    <div className="w-32 h-32 gradient-secondary rounded-2xl overflow-hidden flex-shrink-0 shadow-glow">
                       {item.image_url ? (
                         <img 
                           src={item.image_url} 
@@ -316,19 +333,19 @@ const Cart = () => {
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
-                          <ShoppingBag className="w-12 h-12 text-muted-foreground" />
+                          <ShoppingBag className="w-12 h-12 text-white" />
                         </div>
                       )}
                     </div>
 
                     {/* Product Details */}
                     <div className="flex-1">
-                      <h3 className="font-bold text-2xl mb-3">{item.name}</h3>
-                      <p className="text-primary font-bold text-2xl mb-4">
+                      <h3 className="font-black text-2xl mb-2 text-foreground">{item.name}</h3>
+                      <p className="gradient-primary bg-clip-text text-transparent font-black text-2xl mb-3">
                         {getProductPrice(item.id, item.quantity).toFixed(2)} ج.م / قطعة
                       </p>
-                      <p className="text-lg font-semibold mb-4">
-                        الإجمالي: {(getProductPrice(item.id, item.quantity) * item.quantity).toFixed(2)} ج.م
+                      <p className="text-lg font-bold mb-4 text-muted-foreground">
+                        الإجمالي: <span className="text-foreground">{(getProductPrice(item.id, item.quantity) * item.quantity).toFixed(2)} ج.م</span>
                       </p>
 
                       {/* Size and Color Selectors */}
@@ -403,16 +420,16 @@ const Cart = () => {
                           variant="outline"
                           size="icon"
                           onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                          className="h-12 w-12"
+                          className="h-12 w-12 hover:bg-primary hover:text-white transition-all hover:scale-110"
                         >
                           <Minus className="h-5 w-5" />
                         </Button>
-                        <span className="w-16 text-center font-bold text-xl">{item.quantity}</span>
+                        <span className="w-20 text-center font-black text-2xl bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">{item.quantity}</span>
                         <Button
                           variant="outline"
                           size="icon"
                           onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                          className="h-12 w-12"
+                          className="h-12 w-12 hover:bg-primary hover:text-white transition-all hover:scale-110"
                         >
                           <Plus className="h-5 w-5" />
                         </Button>
@@ -420,7 +437,7 @@ const Cart = () => {
                           variant="destructive"
                           size="icon"
                           onClick={() => removeItem(item.id)}
-                          className="mr-auto h-12 w-12"
+                          className="mr-auto h-12 w-12 shadow-lg hover:scale-110 transition-all"
                         >
                           <Trash2 className="h-5 w-5" />
                         </Button>
@@ -434,9 +451,9 @@ const Cart = () => {
 
           {/* Order Form */}
           <div className="lg:col-span-1">
-            <Card className="sticky top-4 shadow-xl border-2">
-              <CardHeader className="bg-primary/5">
-                <CardTitle className="text-2xl">معلومات التوصيل</CardTitle>
+            <Card className="sticky top-24 shadow-glow border-2 border-primary/20 bg-card/90 backdrop-blur-sm">
+              <CardHeader className="gradient-primary text-white rounded-t-xl">
+                <CardTitle className="text-2xl font-black">📦 معلومات التوصيل</CardTitle>
               </CardHeader>
               <CardContent className="space-y-5 pt-6">
                 <div>
@@ -576,40 +593,40 @@ const Cart = () => {
                 </div>
 
                 {/* Total */}
-                <div className="border-t-2 pt-6 bg-primary/5 -mx-6 px-6 pb-2">
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center text-lg">
-                      <span>المنتجات:</span>
+                <div className="border-t-2 pt-6 gradient-secondary text-white -mx-6 px-6 pb-2 rounded-b-xl">
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center text-lg font-bold">
+                      <span>💰 المنتجات:</span>
                       <span>{items.reduce((sum, item) => sum + (getProductPrice(item.id, item.quantity) * item.quantity), 0).toFixed(2)} ج.م</span>
                     </div>
                     {customerInfo.discount > 0 && (
-                      <div className="flex justify-between items-center text-lg text-green-600">
-                        <span>الخصم:</span>
+                      <div className="flex justify-between items-center text-lg font-bold text-green-200">
+                        <span>🎁 الخصم:</span>
                         <span>- {customerInfo.discount.toFixed(2)} ج.م</span>
                       </div>
                     )}
                     {customerInfo.shippingCost > 0 && (
-                      <div className="flex justify-between items-center text-lg">
-                        <span>الشحن:</span>
+                      <div className="flex justify-between items-center text-lg font-bold">
+                        <span>🚚 الشحن:</span>
                         <span>{customerInfo.shippingCost.toFixed(2)} ج.م</span>
                       </div>
                     )}
-                    <div className="flex justify-between items-center text-2xl font-bold border-t pt-2">
-                      <span>الإجمالي:</span>
-                      <span className="text-primary">{(getTotalPrice() + customerInfo.shippingCost).toFixed(2)} ج.م</span>
+                    <div className="flex justify-between items-center text-2xl font-black border-t-2 border-white/30 pt-3">
+                      <span>✨ الإجمالي:</span>
+                      <span className="text-white text-3xl">{(getTotalPrice() + customerInfo.shippingCost).toFixed(2)} ج.م</span>
                     </div>
                   </div>
                 </div>
               </CardContent>
 
-              <CardFooter className="pt-2">
+              <CardFooter className="pt-6">
                 <Button 
                   onClick={handleSubmitOrder} 
                   disabled={loading}
-                  className="w-full text-lg py-6"
+                  className="w-full gradient-primary text-white font-black text-xl py-7 rounded-xl shadow-glow hover:scale-105 transition-all disabled:opacity-50"
                   size="lg"
                 >
-                  {loading ? "جاري الإرسال..." : "تأكيد الطلب"}
+                  {loading ? "جاري الإرسال..." : "✅ تأكيد الطلب"}
                 </Button>
               </CardFooter>
             </Card>

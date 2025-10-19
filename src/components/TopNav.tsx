@@ -42,13 +42,13 @@ const TopNav = () => {
   };
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
-      <div className="container mx-auto px-4 py-3">
+    <div className="fixed top-0 left-0 right-0 z-50 gradient-primary shadow-glow border-b border-white/10">
+      <div className="container mx-auto px-4 py-4">
         <div className="flex items-center justify-between">
           <Sheet open={open} onOpenChange={setOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label="القائمة">
-                <Menu className="h-6 w-6" />
+              <Button variant="ghost" size="icon" aria-label="القائمة" className="h-12 w-12 hover:bg-white/20 text-white">
+                <Menu className="h-7 w-7" />
               </Button>
             </SheetTrigger>
             <SheetContent side="right" className="w-80 overflow-y-auto">
@@ -92,11 +92,16 @@ const TopNav = () => {
           </Sheet>
 
           <button
-            className="flex items-center gap-3 hover:opacity-90 transition-opacity"
+            className="flex items-center gap-3 group hover:opacity-95 transition-all"
             onClick={() => handleNavigate('/')}
             aria-label="Magou Fashion - الصفحة الرئيسية"
           >
-            <img src={logo} alt="شعار متجر Magou Fashion" className="h-10 w-auto rounded-sm" />
+            <img 
+              src={logo} 
+              alt="شعار متجر Magou Fashion" 
+              className="h-12 w-12 rounded-full object-cover shadow-lg ring-2 ring-white/30 group-hover:ring-white/60 transition-all" 
+            />
+            <span className="text-2xl font-black text-white tracking-tight hidden sm:block">Magou Fashion</span>
           </button>
         </div>
       </div>
