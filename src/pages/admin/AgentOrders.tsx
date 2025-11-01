@@ -975,21 +975,6 @@ const AgentOrders = () => {
                       return sum + (total + customerShipping - agentShipping);
                     }, 0).toFixed(2)} ج.م
                   </p>
-                  {agentPayments && (
-                    <>
-                      <hr className="my-3" />
-                      <h3 className="font-bold mb-2">الملخص</h3>
-                      <p className="font-bold text-xl text-blue-600">
-                        إجمالي المستحقات على المندوب: {parseFloat(agentPayments.total_owed?.toString() || "0").toFixed(2)} ج.م
-                      </p>
-                      <p className="font-bold text-lg text-green-600">
-                        إجمالي المدفوع: {parseFloat(agentPayments.total_paid?.toString() || "0").toFixed(2)} ج.م
-                      </p>
-                      <p className="font-bold text-xl text-red-600">
-                        المتبقي: {(parseFloat(agentPayments.total_owed?.toString() || "0") - parseFloat(agentPayments.total_paid?.toString() || "0")).toFixed(2)} ج.م
-                      </p>
-                    </>
-                  )}
                 </div>
               </div>
             )}
