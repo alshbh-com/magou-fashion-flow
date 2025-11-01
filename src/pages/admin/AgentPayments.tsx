@@ -47,7 +47,7 @@ const AgentPayments = () => {
     },
   });
 
-  const { data: payments, isLoading } = useQuery({
+  const { data: payments = [], isLoading } = useQuery({
     queryKey: ["agent_payments", selectedAgentId],
     queryFn: async () => {
       if (!selectedAgentId) return [];
@@ -404,7 +404,7 @@ const AgentPayments = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {payments.map((payment) => (
+                    {payments?.map((payment) => (
                       <TableRow key={payment.id}>
                         <TableCell>
                           <span className={payment.payment_type === "payment" ? "text-green-600 font-bold" : "text-red-600 font-bold"}>
