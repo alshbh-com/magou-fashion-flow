@@ -198,6 +198,7 @@ export type Database = {
           customer_id: string | null
           delivery_agent_id: string | null
           discount: number | null
+          governorate_id: string | null
           id: string
           modified_amount: number | null
           notes: string | null
@@ -214,6 +215,7 @@ export type Database = {
           customer_id?: string | null
           delivery_agent_id?: string | null
           discount?: number | null
+          governorate_id?: string | null
           id?: string
           modified_amount?: number | null
           notes?: string | null
@@ -230,6 +232,7 @@ export type Database = {
           customer_id?: string | null
           delivery_agent_id?: string | null
           discount?: number | null
+          governorate_id?: string | null
           id?: string
           modified_amount?: number | null
           notes?: string | null
@@ -253,6 +256,13 @@ export type Database = {
             columns: ["delivery_agent_id"]
             isOneToOne: false
             referencedRelation: "delivery_agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_governorate_id_fkey"
+            columns: ["governorate_id"]
+            isOneToOne: false
+            referencedRelation: "governorates"
             referencedColumns: ["id"]
           },
         ]

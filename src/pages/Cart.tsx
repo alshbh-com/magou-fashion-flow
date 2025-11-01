@@ -7,10 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Minus, Plus, Trash2, ShoppingBag, ArrowLeft } from "lucide-react";
+import { Minus, Plus, Trash2, ShoppingBag, ArrowLeft, Check, ChevronsUpDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useNavigate, useLocation } from "react-router-dom";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 
 const Cart = () => {
   const { items, removeItem, updateQuantity, updateItemDetails, clearCart, addItem } = useCart();
@@ -21,6 +24,7 @@ const Cart = () => {
   const [returnOrderId, setReturnOrderId] = useState<string | null>(null);
   const [returnOrderNumber, setReturnOrderNumber] = useState<number | null>(null);
   const [returnOrderDate, setReturnOrderDate] = useState<string | null>(null);
+  const [governorateOpen, setGovernorateOpen] = useState(false);
   
   const [customerInfo, setCustomerInfo] = useState({
     name: "",
@@ -33,6 +37,17 @@ const Cart = () => {
     discount: 0,
     orderDetails: ""
   });
+
+  // دالة لتحويل الأرقام العربية إلى إنجليزية
+  const convertArabicToEnglishNumbers = (str: string) => {
+    const arabicNumbers = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+    const englishNumbers = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+    
+    return str.split('').map(char => {
+      const index = arabicNumbers.indexOf(char);
+      return index !== -1 ? englishNumbers[index] : char;
+    }).join('');
+  };
 
   // Load return order data if navigated from AgentOrders
   useEffect(() => {
@@ -447,6 +462,7 @@ const Cart = () => {
                     onChange={(e) => setCustomerInfo({...customerInfo, name: e.target.value})}
                     placeholder="أدخل اسمك"
                     className="h-12 text-base"
+                    autoComplete="off"
                   />
                 </div>
 
@@ -455,9 +471,13 @@ const Cart = () => {
                   <Input
                     id="phone"
                     value={customerInfo.phone}
-                    onChange={(e) => setCustomerInfo({...customerInfo, phone: e.target.value})}
+                    onChange={(e) => {
+                      const convertedValue = convertArabicToEnglishNumbers(e.target.value);
+                      setCustomerInfo({...customerInfo, phone: convertedValue});
+                    }}
                     placeholder="01XXXXXXXXX"
                     className="h-12 text-base"
+                    autoComplete="off"
                   />
                 </div>
 
@@ -466,37 +486,69 @@ const Cart = () => {
                   <Input
                     id="phone2"
                     value={customerInfo.phone2}
-                    onChange={(e) => setCustomerInfo({...customerInfo, phone2: e.target.value})}
+                    onChange={(e) => {
+                      const convertedValue = convertArabicToEnglishNumbers(e.target.value);
+                      setCustomerInfo({...customerInfo, phone2: convertedValue});
+                    }}
                     placeholder="01XXXXXXXXX"
                     className="h-12 text-base"
+                    autoComplete="off"
                   />
                 </div>
 
                 <div>
                   <Label htmlFor="governorate" className="text-base font-semibold mb-2 block">المحافظة *</Label>
-                  <Select
-                    value={customerInfo.governorate}
-                    onValueChange={(value) => {
-                      const selectedGov = governorates?.find(g => g.name === value);
-                      const shippingCost = selectedGov ? parseFloat(selectedGov.shipping_cost.toString()) : 0;
-                      setCustomerInfo({
-                        ...customerInfo, 
-                        governorate: value,
-                        shippingCost: shippingCost
-                      });
-                    }}
-                  >
-                    <SelectTrigger className="h-12">
-                      <SelectValue placeholder="اختر المحافظة" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {governorates?.map((gov) => (
-                        <SelectItem key={gov.id} value={gov.name}>
-                          {gov.name} - {parseFloat(gov.shipping_cost.toString()).toFixed(2)} ج.م شحن
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={governorateOpen} onOpenChange={setGovernorateOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={governorateOpen}
+                        className="w-full h-12 justify-between"
+                      >
+                        {customerInfo.governorate
+                          ? `${customerInfo.governorate} - ${customerInfo.shippingCost.toFixed(2)} ج.م شحن`
+                          : "اختر المحافظة"}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-full p-0">
+                      <Command>
+                        <CommandInput placeholder="ابحث عن محافظة..." />
+                        <CommandList>
+                          <CommandEmpty>لم يتم العثور على محافظة.</CommandEmpty>
+                          <CommandGroup>
+                            {governorates?.map((gov) => (
+                              <CommandItem
+                                key={gov.id}
+                                value={gov.name}
+                                onSelect={(currentValue) => {
+                                  const selectedGov = governorates.find(g => g.name.toLowerCase() === currentValue.toLowerCase());
+                                  if (selectedGov) {
+                                    const shippingCost = parseFloat(selectedGov.shipping_cost.toString());
+                                    setCustomerInfo({
+                                      ...customerInfo,
+                                      governorate: selectedGov.name,
+                                      shippingCost: shippingCost
+                                    });
+                                  }
+                                  setGovernorateOpen(false);
+                                }}
+                              >
+                                <Check
+                                  className={cn(
+                                    "mr-2 h-4 w-4",
+                                    customerInfo.governorate === gov.name ? "opacity-100" : "opacity-0"
+                                  )}
+                                />
+                                {gov.name} - {parseFloat(gov.shipping_cost.toString()).toFixed(2)} ج.م شحن
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 <div>
@@ -508,6 +560,7 @@ const Cart = () => {
                     placeholder="الشارع، المنطقة، العمارة..."
                     rows={3}
                     className="text-base"
+                    autoComplete="off"
                   />
                 </div>
 
@@ -520,6 +573,7 @@ const Cart = () => {
                     placeholder="أي تفاصيل خاصة بالأوردر..."
                     rows={2}
                     className="text-base"
+                    autoComplete="off"
                   />
                 </div>
 
@@ -532,6 +586,7 @@ const Cart = () => {
                     placeholder="ملاحظات إضافية (اختياري)"
                     rows={2}
                     className="text-base"
+                    autoComplete="off"
                   />
                 </div>
 
@@ -555,10 +610,14 @@ const Cart = () => {
                     id="discount"
                     type="number"
                     value={customerInfo.discount || ""}
-                    onChange={(e) => setCustomerInfo({...customerInfo, discount: Number(e.target.value) || 0})}
+                    onChange={(e) => {
+                      const convertedValue = convertArabicToEnglishNumbers(e.target.value);
+                      setCustomerInfo({...customerInfo, discount: Number(convertedValue) || 0});
+                    }}
                     placeholder="مثال: 50"
                     min="0"
                     className="h-12 text-base"
+                    autoComplete="off"
                   />
                 </div>
 
@@ -568,10 +627,14 @@ const Cart = () => {
                     id="shipping"
                     type="number"
                     value={customerInfo.shippingCost || ""}
-                    onChange={(e) => setCustomerInfo({...customerInfo, shippingCost: Number(e.target.value) || 0})}
+                    onChange={(e) => {
+                      const convertedValue = convertArabicToEnglishNumbers(e.target.value);
+                      setCustomerInfo({...customerInfo, shippingCost: Number(convertedValue) || 0});
+                    }}
                     placeholder="مثال: 30"
                     min="0"
                     className="h-12 text-base"
+                    autoComplete="off"
                   />
                 </div>
 

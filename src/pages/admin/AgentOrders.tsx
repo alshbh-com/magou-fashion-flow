@@ -978,7 +978,7 @@ const AgentOrders = () => {
                   {agentPayments && (
                     <>
                       <hr className="my-3" />
-                      <h3 className="font-bold mb-2">إجمالي المستحقات (من قاعدة البيانات)</h3>
+                      <h3 className="font-bold mb-2">الملخص</h3>
                       <p className="font-bold text-xl text-blue-600">
                         إجمالي المستحقات على المندوب: {parseFloat(agentPayments.total_owed?.toString() || "0").toFixed(2)} ج.م
                       </p>
