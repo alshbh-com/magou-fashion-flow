@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,7 +15,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ArrowLeft, PackageX, Printer, Download, AlertTriangle, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import * as XLSX from 'xlsx';
 
 const statusLabels: Record<string, string> = {
@@ -38,7 +38,8 @@ const AgentOrders = () => {
   const queryClient = useQueryClient();
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [dateFilter, setDateFilter] = useState<string>("");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
@@ -113,9 +114,10 @@ const AgentOrders = () => {
 
   const filteredOrders = orders?.filter(order => {
     if (statusFilter !== "all" && order.status !== statusFilter) return false;
-    if (dateFilter) {
+    if (startDate || endDate) {
       const orderDate = new Date(order.created_at).toISOString().split('T')[0];
-      if (orderDate !== dateFilter) return false;
+      if (startDate && orderDate < startDate) return false;
+      if (endDate && orderDate > endDate) return false;
     }
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -420,6 +422,22 @@ const AgentOrders = () => {
     });
 
     const ws = XLSX.utils.json_to_sheet(exportData || []);
+    
+    // Enhanced styling for Excel
+    const colWidths = [
+      { wch: 12 }, // رقم الأوردر
+      { wch: 20 }, // الاسم
+      { wch: 15 }, // الهاتف
+      { wch: 35 }, // العنوان
+      { wch: 15 }, // المحافظة
+      { wch: 12 }, // الإجمالي
+      { wch: 12 }, // شحن المندوب
+      { wch: 12 }, // الصافي
+      { wch: 12 }, // الحالة
+      { wch: 12 }  // التاريخ
+    ];
+    ws['!cols'] = colWidths;
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "أوردرات المندوب");
     XLSX.writeFile(wb, `agent_orders_${new Date().toISOString().split('T')[0]}.xlsx`);
@@ -731,19 +749,31 @@ const AgentOrders = () => {
                       </Select>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">فلتر حسب التاريخ:</span>
+                      <span className="text-sm font-medium">من تاريخ:</span>
                       <Input
                         type="date"
-                        value={dateFilter}
-                        onChange={(e) => setDateFilter(e.target.value)}
-                        className="w-48"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                        className="w-40"
                       />
-                      {dateFilter && (
-                        <Button size="sm" variant="ghost" onClick={() => setDateFilter("")}>
-                          إلغاء
-                        </Button>
-                      )}
                     </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">إلى تاريخ:</span>
+                      <Input
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                        className="w-40"
+                      />
+                    </div>
+                    {(startDate || endDate) && (
+                      <Button size="sm" variant="ghost" onClick={() => {
+                        setStartDate("");
+                        setEndDate("");
+                      }}>
+                        إلغاء
+                      </Button>
+                    )}
                   </div>
                    {selectedOrders.length > 0 && (
                     <div className="flex items-center gap-2">
@@ -878,29 +908,136 @@ const AgentOrders = () => {
                               {netAmount.toFixed(2)} ج.م
                             </TableCell>
                         <TableCell>
-                          <Select
-                            value={order.status}
-                            onValueChange={(value) =>
-                              updateStatusMutation.mutate({ id: order.id, status: value })
-                            }
-                          >
-                            <SelectTrigger className="w-40">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {Object.entries(statusLabels).map(([value, label]) => (
-                                <SelectItem key={value} value={value}>
-                                  <div className="flex items-center gap-2">
-                                    <div className={`w-2 h-2 rounded-full ${statusColors[value]}`} />
-                                    {label}
-                                  </div>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                              >
+                                تعديل الحالة
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>تعديل حالة الأوردر</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  اختر الحالة الجديدة للأوردر #{order.order_number || order.id.slice(0, 8)}
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <div className="py-4">
+                                <Select
+                                  defaultValue={order.status}
+                                  onValueChange={(value) => {
+                                    updateStatusMutation.mutate({ id: order.id, status: value });
+                                  }}
+                                >
+                                  <SelectTrigger className="w-full">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {Object.entries(statusLabels).map(([value, label]) => (
+                                      <SelectItem key={value} value={value}>
+                                        <div className="flex items-center gap-2">
+                                          <div className={`w-2 h-2 rounded-full ${statusColors[value]}`} />
+                                          {label}
+                                        </div>
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </TableCell>
                         <TableCell>
-                          {new Date(order.created_at).toLocaleDateString("ar-EG")}
+                          <div className="flex gap-2 flex-wrap">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handlePrintOrder(order)}
+                              title="طباعة الفاتورة"
+                            >
+                              <Printer className="h-4 w-4" />
+                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                >
+                                  <PackageX className="ml-2 h-4 w-4" />
+                                  مرتجع
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>تسجيل مرتجع</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    هل أنت متأكد من تسجيل هذا الأوردر كمرتجع؟
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => {
+                                    handleOpenReturnDialog(order);
+                                  }}>
+                                    تأكيد
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    هل أنت متأكد من حذف هذا الأوردر؟ سيتم حذف جميع البيانات المرتبطة به. هذا الإجراء لا يمكن التراجع عنه.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => deleteOrderMutation.mutate(order.id)}>
+                                    حذف
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                >
+                                  إزالة مندوب
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>تأكيد إزالة المندوب</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    هل أنت متأكد من إزالة المندوب من هذا الأوردر؟ سيتم إرجاع الأوردر إلى قائمة الأوردرات غير المعينة.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => unassignAgentMutation.mutate(order.id)}>
+                                    إزالة
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-2 flex-wrap">

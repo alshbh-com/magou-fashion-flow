@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Trash2, Plus, ArrowLeft, Pencil } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -47,22 +48,56 @@ const AgentPayments = () => {
     },
   });
 
+  // Get payments and recalculate totals from orders
   const { data: payments = [], isLoading } = useQuery({
     queryKey: ["agent_payments", selectedAgentId],
     queryFn: async () => {
       if (!selectedAgentId) return [];
       
-      const { data, error } = await supabase
+      // Get all orders for this agent
+      const { data: orders, error: ordersError } = await supabase
+        .from("orders")
+        .select("id, total_amount, shipping_cost, agent_shipping_cost, status")
+        .eq("delivery_agent_id", selectedAgentId);
+      
+      if (ordersError) throw ordersError;
+
+      // Calculate totals from orders
+      let totalOwed = 0;
+      orders?.forEach(order => {
+        const amount = parseFloat(order.total_amount?.toString() || "0") + 
+                      parseFloat(order.shipping_cost?.toString() || "0") - 
+                      parseFloat(order.agent_shipping_cost?.toString() || "0");
+        totalOwed += amount;
+      });
+
+      // Get payment records
+      const { data: paymentRecords, error } = await supabase
         .from("agent_payments")
-        .select(`
-          *,
-          delivery_agents (name, serial_number)
-        `)
+        .select("*")
         .eq("delivery_agent_id", selectedAgentId)
         .order("created_at", { ascending: false });
       
       if (error) throw error;
-      return data;
+
+      // Calculate total paid from payment records
+      const totalPaid = paymentRecords?.reduce((sum, p) => {
+        if (p.payment_type === "payment") {
+          return sum + parseFloat(p.amount.toString());
+        }
+        return sum;
+      }, 0) || 0;
+
+      // Update agent totals to match actual orders
+      await supabase
+        .from("delivery_agents")
+        .update({
+          total_owed: totalOwed,
+          total_paid: totalPaid
+        })
+        .eq("id", selectedAgentId);
+
+      return paymentRecords;
     },
     enabled: !!selectedAgentId
   });
@@ -427,17 +462,30 @@ const AgentPayments = () => {
                             >
                               <Pencil className="h-4 w-4" />
                             </Button>
-                            <Button
-                              variant="destructive"
-                              size="icon"
-                              onClick={() => {
-                                if (confirm("هل أنت متأكد من الحذف؟")) {
-                                  deleteMutation.mutate(payment);
-                                }
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="destructive"
+                                  size="icon"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    هل أنت متأكد من حذف هذا السجل؟ هذا الإجراء لا يمكن التراجع عنه.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => deleteMutation.mutate(payment)}>
+                                    حذف
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
                           </div>
                         </TableCell>
                       </TableRow>

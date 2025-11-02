@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft } from "lucide-react";
@@ -15,7 +16,8 @@ const AllOrders = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [dateFilter, setDateFilter] = useState<string>("");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
   const [governorateFilter, setGovernorateFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [editingStatus, setEditingStatus] = useState<{orderId: string, currentStatus: string} | null>(null);
@@ -156,9 +158,10 @@ const AllOrders = () => {
 
   const filteredOrders = orders?.filter(order => {
     if (statusFilter !== "all" && order.status !== statusFilter) return false;
-    if (dateFilter) {
+    if (startDate || endDate) {
       const orderDate = new Date(order.created_at).toISOString().split('T')[0];
-      if (orderDate !== dateFilter) return false;
+      if (startDate && orderDate < startDate) return false;
+      if (endDate && orderDate > endDate) return false;
     }
     if (governorateFilter !== "all" && order.customers?.governorate !== governorateFilter) {
       return false;
@@ -216,19 +219,31 @@ const AllOrders = () => {
                 </Select>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">فلتر حسب التاريخ:</span>
+                <span className="text-sm font-medium">من تاريخ:</span>
                 <Input
                   type="date"
-                  value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
-                  className="w-48"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-40"
                 />
-                {dateFilter && (
-                  <Button size="sm" variant="ghost" onClick={() => setDateFilter("")}>
-                    إلغاء
-                  </Button>
-                )}
               </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">إلى تاريخ:</span>
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-40"
+                />
+              </div>
+              {(startDate || endDate) && (
+                <Button size="sm" variant="ghost" onClick={() => {
+                  setStartDate("");
+                  setEndDate("");
+                }}>
+                  إلغاء
+                </Button>
+              )}
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium">فلتر حسب المحافظة:</span>
                 <Select value={governorateFilter} onValueChange={setGovernorateFilter}>
@@ -344,38 +359,59 @@ const AllOrders = () => {
                             {new Date(order.created_at).toLocaleDateString("ar-EG")}
                           </TableCell>
                           <TableCell>
-                            {editingStatus?.orderId === order.id ? (
-                              <div className="flex gap-2">
-                                <Button
-                                  size="sm"
-                                  onClick={() => {
-                                    updateStatusMutation.mutate({
-                                      orderId: order.id,
-                                      newStatus: editingStatus.currentStatus,
-                                      oldStatus: order.status,
-                                      order: order
-                                    });
-                                  }}
-                                >
-                                  حفظ
-                                </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  onClick={() => setEditingStatus(null)}
                                 >
-                                  إلغاء
+                                  تعديل الحالة
                                 </Button>
-                              </div>
-                            ) : (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setEditingStatus({ orderId: order.id, currentStatus: order.status })}
-                              >
-                                تعديل الحالة
-                              </Button>
-                            )}
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>تعديل حالة الأوردر</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    اختر الحالة الجديدة للأوردر #{order.order_number || order.id.slice(0, 8)}
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <div className="py-4">
+                                  <Select
+                                    value={editingStatus?.orderId === order.id ? editingStatus.currentStatus : order.status}
+                                    onValueChange={(value) => setEditingStatus({ orderId: order.id, currentStatus: value })}
+                                  >
+                                    <SelectTrigger className="w-full">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="pending">قيد الانتظار</SelectItem>
+                                      <SelectItem value="processing">قيد التنفيذ</SelectItem>
+                                      <SelectItem value="shipped">تم الشحن</SelectItem>
+                                      <SelectItem value="delivered">تم التوصيل</SelectItem>
+                                      <SelectItem value="cancelled">ملغي</SelectItem>
+                                      <SelectItem value="returned">مرتجع</SelectItem>
+                                      <SelectItem value="partially_returned">مرتجع جزئي</SelectItem>
+                                      <SelectItem value="return_no_shipping">مرتجع دون شحن</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel onClick={() => setEditingStatus(null)}>إلغاء</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => {
+                                    if (editingStatus) {
+                                      updateStatusMutation.mutate({
+                                        orderId: order.id,
+                                        newStatus: editingStatus.currentStatus,
+                                        oldStatus: order.status,
+                                        order: order
+                                      });
+                                    }
+                                  }}>
+                                    حفظ
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
                           </TableCell>
                         </TableRow>
                       );

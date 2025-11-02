@@ -14,6 +14,7 @@ import { ArrowLeft, UserCheck, Printer, Download, Barcode } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import * as XLSX from 'xlsx';
 
 const Orders = () => {
@@ -23,7 +24,8 @@ const Orders = () => {
   const [bulkAgentId, setBulkAgentId] = useState<string>("");
   const [bulkShippingCost, setBulkShippingCost] = useState<number>(0);
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [dateFilter, setDateFilter] = useState<string>("");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
   const [governorateFilter, setGovernorateFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [barcodeDialogOpen, setBarcodeDialogOpen] = useState(false);
@@ -262,6 +264,25 @@ const Orders = () => {
     });
 
     const ws = XLSX.utils.json_to_sheet(exportData || []);
+    
+    // Enhanced styling for Excel
+    const colWidths = [
+      { wch: 12 }, // رقم الأوردر
+      { wch: 15 }, // المحافظة
+      { wch: 20 }, // الاسم
+      { wch: 15 }, // الهاتف
+      { wch: 15 }, // الهاتف الإضافي
+      { wch: 35 }, // العنوان
+      { wch: 30 }, // تفاصيل الأوردر
+      { wch: 12 }, // الصافي
+      { wch: 10 }, // الخصم
+      { wch: 10 }, // الشحن
+      { wch: 12 }, // الإجمالي
+      { wch: 25 }, // الملاحظات
+      { wch: 12 }  // التاريخ
+    ];
+    ws['!cols'] = colWidths;
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "الأوردرات");
     XLSX.writeFile(wb, `orders_${new Date().toISOString().split('T')[0]}.xlsx`);
@@ -380,9 +401,10 @@ const Orders = () => {
 
   const filteredOrders = orders?.filter(order => {
     if (statusFilter !== "all" && order.status !== statusFilter) return false;
-    if (dateFilter) {
+    if (startDate || endDate) {
       const orderDate = new Date(order.created_at).toISOString().split('T')[0];
-      if (orderDate !== dateFilter) return false;
+      if (startDate && orderDate < startDate) return false;
+      if (endDate && orderDate > endDate) return false;
     }
     if (governorateFilter !== "all" && order.customers?.governorate !== governorateFilter) {
       return false;
@@ -497,19 +519,31 @@ const Orders = () => {
                   </Select>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">فلتر حسب التاريخ:</span>
+                  <span className="text-sm font-medium">من تاريخ:</span>
                   <Input
                     type="date"
-                    value={dateFilter}
-                    onChange={(e) => setDateFilter(e.target.value)}
-                    className="w-48"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-40"
                   />
-                  {dateFilter && (
-                    <Button size="sm" variant="ghost" onClick={() => setDateFilter("")}>
-                      إلغاء
-                    </Button>
-                  )}
                 </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">إلى تاريخ:</span>
+                  <Input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="w-40"
+                  />
+                </div>
+                {(startDate || endDate) && (
+                  <Button size="sm" variant="ghost" onClick={() => {
+                    setStartDate("");
+                    setEndDate("");
+                  }}>
+                    إلغاء
+                  </Button>
+                )}
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">فلتر حسب المحافظة:</span>
                   <Select value={governorateFilter} onValueChange={setGovernorateFilter}>
@@ -635,17 +669,27 @@ const Orders = () => {
                             {new Date(order.created_at).toLocaleDateString("ar-EG")}
                           </TableCell>
                           <TableCell>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => {
-                                if (confirm("هل أنت متأكد من حذف هذا الأوردر؟")) {
-                                  deleteOrderMutation.mutate(order.id);
-                                }
-                              }}
-                            >
-                              حذف
-                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="destructive" size="sm">
+                                  حذف
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    هل أنت متأكد من حذف هذا الأوردر؟ سيتم حذف جميع البيانات المرتبطة به. هذا الإجراء لا يمكن التراجع عنه.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => deleteOrderMutation.mutate(order.id)}>
+                                    حذف
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
                           </TableCell>
                         </TableRow>
                       );

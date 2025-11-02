@@ -10,8 +10,7 @@ import {
   DollarSign, 
   FileText, 
   BarChart, 
-  Settings,
-  PackageX
+  Settings
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import SearchBar from "@/components/admin/SearchBar";
@@ -58,20 +57,6 @@ const adminSections = [
     icon: Settings,
     path: "/admin/products",
     color: "text-red-500"
-  },
-  {
-    title: "المرتجعات",
-    description: "إدارة المنتجات المرتجعة",
-    icon: PackageX,
-    path: "/admin/returns",
-    color: "text-orange-600"
-  },
-  {
-    title: "الأوردرات المعدلة",
-    description: "الأوردرات التي تم توصيلها مع تعديل",
-    icon: Package,
-    path: "/admin/modified-orders",
-    color: "text-indigo-500"
   },
   {
     title: "الإحصائيات",
