@@ -115,23 +115,19 @@ const AgentPayments = () => {
       
       if (error) throw error;
 
-      // Update agent totals
-      const agent = agents?.find(a => a.id === data.delivery_agent_id);
-      if (agent) {
-        const newTotal = data.payment_type === "payment"
-          ? parseFloat(agent.total_paid.toString()) + parseFloat(data.amount)
-          : parseFloat(agent.total_owed.toString()) + parseFloat(data.amount);
+      // Update only total_paid when adding a payment record
+      if (data.payment_type === "payment") {
+        const agent = agents?.find(a => a.id === data.delivery_agent_id);
+        if (agent) {
+          const newTotalPaid = parseFloat(agent.total_paid.toString()) + parseFloat(data.amount);
 
-        const updateData = data.payment_type === "payment"
-          ? { total_paid: newTotal }
-          : { total_owed: newTotal };
+          const { error: updateError } = await supabase
+            .from("delivery_agents")
+            .update({ total_paid: newTotalPaid })
+            .eq("id", data.delivery_agent_id);
 
-        const { error: updateError } = await supabase
-          .from("delivery_agents")
-          .update(updateData)
-          .eq("id", data.delivery_agent_id);
-
-        if (updateError) throw updateError;
+          if (updateError) throw updateError;
+        }
       }
     },
     onSuccess: () => {
@@ -154,36 +150,28 @@ const AgentPayments = () => {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, oldData, newData }: { id: string, oldData: any, newData: typeof editFormData }) => {
-      // First, reverse the old totals
+      // Only update total_paid for payment type records
       const agent = agents?.find(a => a.id === oldData.delivery_agent_id);
       if (agent) {
         const oldAmount = parseFloat(oldData.amount.toString());
         const newAmount = parseFloat(newData.amount);
         
-        // Reverse old values
         let currentPaid = parseFloat(agent.total_paid.toString());
-        let currentOwed = parseFloat(agent.total_owed.toString());
 
+        // Reverse old payment if it was a payment type
         if (oldData.payment_type === "payment") {
           currentPaid -= oldAmount;
-        } else {
-          currentOwed -= oldAmount;
         }
 
-        // Add new values
+        // Add new payment if it's a payment type
         if (newData.payment_type === "payment") {
           currentPaid += newAmount;
-        } else {
-          currentOwed += newAmount;
         }
 
-        // Update agent totals
+        // Update only total_paid (total_owed is calculated from orders)
         const { error: agentError } = await supabase
           .from("delivery_agents")
-          .update({
-            total_paid: currentPaid,
-            total_owed: currentOwed
-          })
+          .update({ total_paid: currentPaid })
           .eq("id", oldData.delivery_agent_id);
 
         if (agentError) throw agentError;
@@ -216,24 +204,20 @@ const AgentPayments = () => {
 
   const deleteMutation = useMutation({
     mutationFn: async (payment: any) => {
-      // First update agent totals
-      const agent = agents?.find(a => a.id === payment.delivery_agent_id);
-      if (agent) {
-        const amount = parseFloat(payment.amount.toString());
-        const newTotal = payment.payment_type === "payment"
-          ? parseFloat(agent.total_paid.toString()) - amount
-          : parseFloat(agent.total_owed.toString()) - amount;
+      // Only update total_paid if it's a payment type record
+      if (payment.payment_type === "payment") {
+        const agent = agents?.find(a => a.id === payment.delivery_agent_id);
+        if (agent) {
+          const amount = parseFloat(payment.amount.toString());
+          const newTotalPaid = Math.max(0, parseFloat(agent.total_paid.toString()) - amount);
 
-        const updateData = payment.payment_type === "payment"
-          ? { total_paid: Math.max(0, newTotal) }
-          : { total_owed: Math.max(0, newTotal) };
+          const { error: agentError } = await supabase
+            .from("delivery_agents")
+            .update({ total_paid: newTotalPaid })
+            .eq("id", payment.delivery_agent_id);
 
-        const { error: agentError } = await supabase
-          .from("delivery_agents")
-          .update(updateData)
-          .eq("id", payment.delivery_agent_id);
-
-        if (agentError) throw agentError;
+          if (agentError) throw agentError;
+        }
       }
 
       const { error } = await supabase
