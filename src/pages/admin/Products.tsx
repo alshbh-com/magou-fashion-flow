@@ -26,10 +26,25 @@ const Products = () => {
     offer_price: "",
     stock: "",
     is_offer: false,
+    category_id: "",
     size_options: "",
     color_options: "",
     details: "",
     quantity_pricing: Array.from({ length: 12 }, (_, i) => ({ quantity: i + 1, price: "" }))
+  });
+
+  const { data: categories } = useQuery({
+    queryKey: ["categories"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("categories")
+        .select("*")
+        .eq("is_active", true)
+        .order("display_order");
+      
+      if (error) throw error;
+      return data;
+    },
   });
 
   const { data: products, isLoading } = useQuery({
@@ -136,6 +151,7 @@ const Products = () => {
       offer_price: "",
       stock: "",
       is_offer: false,
+      category_id: "",
       size_options: "",
       color_options: "",
       details: "",
@@ -160,6 +176,7 @@ const Products = () => {
       offer_price: product.offer_price?.toString() || "",
       stock: product.stock.toString(),
       is_offer: product.is_offer,
+      category_id: product.category_id || "",
       size_options: product.size_options?.join(', ') || "",
       color_options: product.color_options?.join(', ') || "",
       details: product.details || "",
@@ -221,6 +238,23 @@ const Products = () => {
                       onChange={(e) => setFormData({...formData, description: e.target.value})}
                       rows={3}
                     />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="category_id">القسم</Label>
+                    <select
+                      id="category_id"
+                      value={formData.category_id}
+                      onChange={(e) => setFormData({...formData, category_id: e.target.value})}
+                      className="w-full px-3 py-2 border border-input rounded-md bg-background"
+                    >
+                      <option value="">بدون قسم</option>
+                      {categories?.map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.name}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   
                   <div>

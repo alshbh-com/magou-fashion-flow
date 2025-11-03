@@ -23,15 +23,12 @@ const AgentPayments = () => {
   const [editingPayment, setEditingPayment] = useState<any>(null);
   
   const [formData, setFormData] = useState({
-    delivery_agent_id: "",
     amount: "",
-    payment_type: "payment",
     notes: ""
   });
 
   const [editFormData, setEditFormData] = useState({
     amount: "",
-    payment_type: "payment",
     notes: ""
   });
 
@@ -48,215 +45,136 @@ const AgentPayments = () => {
     },
   });
 
-  // Get payments and recalculate totals from orders
-  const { data: payments = [], isLoading } = useQuery({
-    queryKey: ["agent_payments", selectedAgentId],
+  // Calculate totals dynamically from orders and payments
+  const { data: agentData, isLoading } = useQuery({
+    queryKey: ["agent_payments_summary", selectedAgentId],
     queryFn: async () => {
-      if (!selectedAgentId) return [];
+      if (!selectedAgentId) return null;
       
-      // Get all orders for this agent
+      // Get all orders for this agent and calculate total owed
       const { data: orders, error: ordersError } = await supabase
         .from("orders")
-        .select("id, total_amount, shipping_cost, agent_shipping_cost, status")
+        .select("total_amount, shipping_cost, agent_shipping_cost")
         .eq("delivery_agent_id", selectedAgentId);
       
       if (ordersError) throw ordersError;
 
-      // Calculate totals from orders
-      let totalOwed = 0;
-      orders?.forEach(order => {
-        const amount = parseFloat(order.total_amount?.toString() || "0") + 
-                      parseFloat(order.shipping_cost?.toString() || "0") - 
-                      parseFloat(order.agent_shipping_cost?.toString() || "0");
-        totalOwed += amount;
-      });
+      const totalOwed = orders?.reduce((sum, order) => {
+        return sum + parseFloat(order.total_amount?.toString() || "0") + 
+               parseFloat(order.shipping_cost?.toString() || "0") - 
+               parseFloat(order.agent_shipping_cost?.toString() || "0");
+      }, 0) || 0;
 
       // Get payment records
-      const { data: paymentRecords, error } = await supabase
+      const { data: payments, error: paymentsError } = await supabase
         .from("agent_payments")
         .select("*")
         .eq("delivery_agent_id", selectedAgentId)
         .order("created_at", { ascending: false });
       
-      if (error) throw error;
+      if (paymentsError) throw paymentsError;
 
-      // Calculate total paid from payment records
-      const totalPaid = paymentRecords?.reduce((sum, p) => {
-        if (p.payment_type === "payment") {
-          return sum + parseFloat(p.amount.toString());
-        }
-        return sum;
+      // Calculate total paid
+      const totalPaid = payments?.reduce((sum, p) => {
+        return sum + parseFloat(p.amount.toString());
       }, 0) || 0;
 
-      // Update agent totals to match actual orders
-      await supabase
-        .from("delivery_agents")
-        .update({
-          total_owed: totalOwed,
-          total_paid: totalPaid
-        })
-        .eq("id", selectedAgentId);
-
-      return paymentRecords;
+      return {
+        payments,
+        totalOwed,
+        totalPaid,
+        balance: totalOwed - totalPaid
+      };
     },
     enabled: !!selectedAgentId
   });
 
   const createMutation = useMutation({
-    mutationFn: async (data: typeof formData) => {
+    mutationFn: async (data: { amount: string; notes: string }) => {
+      if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
+      
       const { error } = await supabase
         .from("agent_payments")
         .insert({
-          delivery_agent_id: data.delivery_agent_id,
+          delivery_agent_id: selectedAgentId,
           amount: parseFloat(data.amount),
-          payment_type: data.payment_type,
+          payment_type: "payment",
           notes: data.notes || null
         });
       
       if (error) throw error;
-
-      // Update only total_paid when adding a payment record
-      if (data.payment_type === "payment") {
-        const agent = agents?.find(a => a.id === data.delivery_agent_id);
-        if (agent) {
-          const newTotalPaid = parseFloat(agent.total_paid.toString()) + parseFloat(data.amount);
-
-          const { error: updateError } = await supabase
-            .from("delivery_agents")
-            .update({ total_paid: newTotalPaid })
-            .eq("id", data.delivery_agent_id);
-
-          if (updateError) throw updateError;
-        }
-      }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["agent_payments"] });
-      queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
-      toast.success("تم الحفظ بنجاح");
+      queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
+      toast.success("تم إضافة الدفعة بنجاح");
       setOpen(false);
-      setFormData({
-        delivery_agent_id: "",
-        amount: "",
-        payment_type: "payment",
-        notes: ""
-      });
+      setFormData({ amount: "", notes: "" });
     },
-    onError: (error) => {
-      console.error("خطأ في الحفظ:", error);
-      toast.error("حدث خطأ في الحفظ");
+    onError: () => {
+      toast.error("حدث خطأ أثناء الإضافة");
     }
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, oldData, newData }: { id: string, oldData: any, newData: typeof editFormData }) => {
-      // Only update total_paid for payment type records
-      const agent = agents?.find(a => a.id === oldData.delivery_agent_id);
-      if (agent) {
-        const oldAmount = parseFloat(oldData.amount.toString());
-        const newAmount = parseFloat(newData.amount);
-        
-        let currentPaid = parseFloat(agent.total_paid.toString());
-
-        // Reverse old payment if it was a payment type
-        if (oldData.payment_type === "payment") {
-          currentPaid -= oldAmount;
-        }
-
-        // Add new payment if it's a payment type
-        if (newData.payment_type === "payment") {
-          currentPaid += newAmount;
-        }
-
-        // Update only total_paid (total_owed is calculated from orders)
-        const { error: agentError } = await supabase
-          .from("delivery_agents")
-          .update({ total_paid: currentPaid })
-          .eq("id", oldData.delivery_agent_id);
-
-        if (agentError) throw agentError;
-      }
-
-      // Update the payment record
+    mutationFn: async ({ id, amount, notes }: { id: string, amount: string, notes: string }) => {
       const { error } = await supabase
         .from("agent_payments")
         .update({
-          amount: parseFloat(newData.amount),
-          payment_type: newData.payment_type,
-          notes: newData.notes || null
+          amount: parseFloat(amount),
+          notes: notes || null
         })
         .eq("id", id);
       
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["agent_payments"] });
-      queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
+      queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
       toast.success("تم التعديل بنجاح");
       setEditOpen(false);
       setEditingPayment(null);
     },
-    onError: (error) => {
-      console.error("خطأ في التعديل:", error);
-      toast.error("حدث خطأ في التعديل");
+    onError: () => {
+      toast.error("حدث خطأ أثناء التعديل");
     }
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (payment: any) => {
-      // Only update total_paid if it's a payment type record
-      if (payment.payment_type === "payment") {
-        const agent = agents?.find(a => a.id === payment.delivery_agent_id);
-        if (agent) {
-          const amount = parseFloat(payment.amount.toString());
-          const newTotalPaid = Math.max(0, parseFloat(agent.total_paid.toString()) - amount);
-
-          const { error: agentError } = await supabase
-            .from("delivery_agents")
-            .update({ total_paid: newTotalPaid })
-            .eq("id", payment.delivery_agent_id);
-
-          if (agentError) throw agentError;
-        }
-      }
-
+    mutationFn: async (id: string) => {
       const { error } = await supabase
         .from("agent_payments")
         .delete()
-        .eq("id", payment.id);
+        .eq("id", id);
       
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["agent_payments"] });
-      queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
+      queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
       toast.success("تم الحذف بنجاح");
     },
-    onError: (error) => {
-      console.error("خطأ في الحذف:", error);
+    onError: () => {
       toast.error("حدث خطأ أثناء الحذف");
     }
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.delivery_agent_id || !formData.amount) {
+    if (!selectedAgentId || !formData.amount) {
       toast.error("يرجى ملء جميع الحقول");
       return;
     }
-    createMutation.mutate(formData);
+    createMutation.mutate({ amount: formData.amount, notes: formData.notes });
   };
 
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editFormData.amount || !editingPayment) {
-      toast.error("يرجى ملء جميع الحقول");
+      toast.error("يرجى ملء المبلغ");
       return;
     }
     updateMutation.mutate({
       id: editingPayment.id,
-      oldData: editingPayment,
-      newData: editFormData
+      amount: editFormData.amount,
+      notes: editFormData.notes
     });
   };
 
@@ -264,7 +182,6 @@ const AgentPayments = () => {
     setEditingPayment(payment);
     setEditFormData({
       amount: payment.amount.toString(),
-      payment_type: payment.payment_type,
       notes: payment.notes || ""
     });
     setEditOpen(true);
@@ -282,54 +199,19 @@ const AgentPayments = () => {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>مستحقات المندوب</CardTitle>
+            <CardTitle>دفعات المندوب</CardTitle>
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
-                <Button>
+                <Button disabled={!selectedAgentId}>
                   <Plus className="ml-2 h-4 w-4" />
-                  إضافة سجل
+                  إضافة دفعة
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>إضافة سجل جديد</DialogTitle>
+                  <DialogTitle>إضافة دفعة جديدة</DialogTitle>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  <div>
-                    <Label htmlFor="agent">المندوب</Label>
-                    <Select
-                      value={formData.delivery_agent_id}
-                      onValueChange={(value) => setFormData({...formData, delivery_agent_id: value})}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="اختر مندوب" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {agents?.map((agent) => (
-                          <SelectItem key={agent.id} value={agent.id}>
-                            {agent.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  
-                  <div>
-                    <Label htmlFor="payment_type">النوع</Label>
-                    <Select
-                      value={formData.payment_type}
-                      onValueChange={(value) => setFormData({...formData, payment_type: value})}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="payment">دفعة (مدفوع)</SelectItem>
-                        <SelectItem value="owed">مستحق (عليه)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  
                   <div>
                     <Label htmlFor="amount">المبلغ (ج.م)</Label>
                     <Input
@@ -339,6 +221,7 @@ const AgentPayments = () => {
                       value={formData.amount}
                       onChange={(e) => setFormData({...formData, amount: e.target.value})}
                       required
+                      placeholder="أدخل المبلغ المدفوع"
                     />
                   </div>
                   
@@ -349,11 +232,12 @@ const AgentPayments = () => {
                       value={formData.notes}
                       onChange={(e) => setFormData({...formData, notes: e.target.value})}
                       rows={2}
+                      placeholder="أضف ملاحظات (اختياري)"
                     />
                   </div>
                   
                   <Button type="submit" className="w-full">
-                    حفظ
+                    إضافة دفعة
                   </Button>
                 </form>
               </DialogContent>
@@ -376,27 +260,27 @@ const AgentPayments = () => {
               </Select>
             </div>
 
-            {selectedAgent && (
+            {selectedAgent && agentData && (
               <Card className="mb-6 bg-accent">
                 <CardContent className="p-6">
                   <h3 className="font-bold text-lg mb-3">{selectedAgent.name}</h3>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">إجمالي المستحق (من الأوردرات)</p>
+                      <p className="text-2xl font-bold text-blue-600">
+                        {agentData.totalOwed.toFixed(2)} ج.م
+                      </p>
+                    </div>
                     <div>
                       <p className="text-sm text-muted-foreground">إجمالي المدفوع</p>
                       <p className="text-2xl font-bold text-green-600">
-                        {parseFloat(selectedAgent.total_paid.toString()).toFixed(2)} ج.م
+                        {agentData.totalPaid.toFixed(2)} ج.م
                       </p>
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">إجمالي المستحق</p>
-                      <p className="text-2xl font-bold text-red-600">
-                        {parseFloat(selectedAgent.total_owed.toString()).toFixed(2)} ج.م
-                      </p>
-                    </div>
-                    <div className="col-span-2">
-                      <p className="text-sm text-muted-foreground">الرصيد</p>
-                      <p className="text-2xl font-bold">
-                        {(parseFloat(selectedAgent.total_owed.toString()) - parseFloat(selectedAgent.total_paid.toString())).toFixed(2)} ج.م
+                      <p className="text-sm text-muted-foreground">الرصيد المتبقي</p>
+                      <p className={`text-2xl font-bold ${agentData.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        {agentData.balance.toFixed(2)} ج.م
                       </p>
                     </div>
                   </div>
@@ -405,17 +289,16 @@ const AgentPayments = () => {
             )}
 
             {!selectedAgentId ? (
-              <p className="text-center text-muted-foreground py-8">اختر مندوب لعرض سجلاته</p>
+              <p className="text-center text-muted-foreground py-8">اختر مندوب لعرض المستحقات والدفعات</p>
             ) : isLoading ? (
               <p className="text-center py-8">جاري التحميل...</p>
-            ) : !payments || payments.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">لا توجد سجلات</p>
+            ) : !agentData?.payments || agentData.payments.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">لا توجد دفعات مسجلة</p>
             ) : (
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>النوع</TableHead>
                       <TableHead>المبلغ</TableHead>
                       <TableHead>ملاحظات</TableHead>
                       <TableHead>التاريخ</TableHead>
@@ -423,14 +306,9 @@ const AgentPayments = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {payments?.map((payment) => (
+                    {agentData.payments.map((payment) => (
                       <TableRow key={payment.id}>
-                        <TableCell>
-                          <span className={payment.payment_type === "payment" ? "text-green-600 font-bold" : "text-red-600 font-bold"}>
-                            {payment.payment_type === "payment" ? "دفعة" : "مستحق"}
-                          </span>
-                        </TableCell>
-                        <TableCell className="font-bold">
+                        <TableCell className="font-bold text-green-600">
                           {parseFloat(payment.amount.toString()).toFixed(2)} ج.م
                         </TableCell>
                         <TableCell>{payment.notes || "-"}</TableCell>
@@ -448,10 +326,7 @@ const AgentPayments = () => {
                             </Button>
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
-                                <Button
-                                  variant="destructive"
-                                  size="icon"
-                                >
+                                <Button variant="destructive" size="icon">
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
                               </AlertDialogTrigger>
@@ -459,12 +334,12 @@ const AgentPayments = () => {
                                 <AlertDialogHeader>
                                   <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
                                   <AlertDialogDescription>
-                                    هل أنت متأكد من حذف هذا السجل؟ هذا الإجراء لا يمكن التراجع عنه.
+                                    هل أنت متأكد من حذف هذه الدفعة؟
                                   </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
                                   <AlertDialogCancel>إلغاء</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => deleteMutation.mutate(payment)}>
+                                  <AlertDialogAction onClick={() => deleteMutation.mutate(payment.id)}>
                                     حذف
                                   </AlertDialogAction>
                                 </AlertDialogFooter>
@@ -488,22 +363,6 @@ const AgentPayments = () => {
               <DialogTitle>تعديل السجل</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleEditSubmit} className="space-y-4">
-              <div>
-                <Label htmlFor="edit_payment_type">النوع</Label>
-                <Select
-                  value={editFormData.payment_type}
-                  onValueChange={(value) => setEditFormData({...editFormData, payment_type: value})}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="payment">دفعة (مدفوع)</SelectItem>
-                    <SelectItem value="owed">مستحق (عليه)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              
               <div>
                 <Label htmlFor="edit_amount">المبلغ (ج.م)</Label>
                 <Input

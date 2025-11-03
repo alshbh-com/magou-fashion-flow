@@ -45,7 +45,7 @@ const adminSections = [
     color: "text-purple-500"
   },
   {
-    title: "مستحقات المندوب",
+    title: "دفعات المندوب",
     description: "المدفوعات والمستحقات",
     icon: DollarSign,
     path: "/admin/agent-payments",
@@ -57,6 +57,13 @@ const adminSections = [
     icon: Settings,
     path: "/admin/products",
     color: "text-red-500"
+  },
+  {
+    title: "الأقسام",
+    description: "إدارة أقسام المنتجات",
+    icon: Settings,
+    path: "/admin/categories",
+    color: "text-indigo-500"
   },
   {
     title: "الإحصائيات",

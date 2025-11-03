@@ -11,6 +11,7 @@ import Customers from "./pages/admin/Customers";
 import Agents from "./pages/admin/Agents";
 import Orders from "./pages/admin/Orders";
 import Products from "./pages/admin/Products";
+import Categories from "./pages/admin/Categories";
 import AgentOrders from "./pages/admin/AgentOrders";
 import AgentPayments from "./pages/admin/AgentPayments";
 import Statistics from "./pages/admin/Statistics";
@@ -40,6 +41,7 @@ const App = () => (
             <Route path="/admin/agents" element={<Agents />} />
             <Route path="/admin/orders" element={<Orders />} />
             <Route path="/admin/products" element={<Products />} />
+            <Route path="/admin/categories" element={<Categories />} />
             <Route path="/admin/agent-orders" element={<AgentOrders />} />
             <Route path="/admin/agent-payments" element={<AgentPayments />} />
             <Route path="/admin/statistics" element={<Statistics />} />

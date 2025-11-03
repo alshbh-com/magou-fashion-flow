@@ -31,7 +31,7 @@ export type Database = {
           id?: string
           notes?: string | null
           order_id?: string | null
-          payment_type: string
+          payment_type?: string
         }
         Update: {
           amount?: number
@@ -58,6 +58,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      categories: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          display_order: number | null
+          id: string
+          image_url: string | null
+          is_active: boolean | null
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          display_order?: number | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean | null
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          display_order?: number | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean | null
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: []
       }
       customers: {
         Row: {
@@ -269,6 +302,7 @@ export type Database = {
       }
       products: {
         Row: {
+          category_id: string | null
           color_options: string[] | null
           created_at: string | null
           description: string | null
@@ -285,6 +319,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          category_id?: string | null
           color_options?: string[] | null
           created_at?: string | null
           description?: string | null
@@ -301,6 +336,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          category_id?: string | null
           color_options?: string[] | null
           created_at?: string | null
           description?: string | null
@@ -316,7 +352,15 @@ export type Database = {
           stock?: number | null
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "products_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       returns: {
         Row: {

@@ -10,15 +10,35 @@ import { toast } from "sonner";
 
 const Home = () => {
   const { addItem } = useCart();
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
   
-  const { data: products, isLoading } = useQuery({
-    queryKey: ["products"],
+  const { data: categories } = useQuery({
+    queryKey: ["categories"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("products")
+        .from("categories")
         .select("*")
+        .eq("is_active", true)
+        .order("display_order");
+      
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: products, isLoading } = useQuery({
+    queryKey: ["products", selectedCategory],
+    queryFn: async () => {
+      let query = supabase
+        .from("products")
+        .select("*, categories(name)")
         .order("created_at", { ascending: false });
       
+      if (selectedCategory !== "all") {
+        query = query.eq("category_id", selectedCategory);
+      }
+      
+      const { data, error } = await query;
       if (error) throw error;
       return data;
     },
@@ -74,6 +94,29 @@ const Home = () => {
 
       {/* Products Grid */}
       <div className="container mx-auto px-4 py-8">
+        {/* Categories Tabs */}
+        {categories && categories.length > 0 && (
+          <div className="mb-8 flex gap-2 flex-wrap justify-center">
+            <Button
+              variant={selectedCategory === "all" ? "default" : "outline"}
+              onClick={() => setSelectedCategory("all")}
+              className="rounded-full"
+            >
+              الكل
+            </Button>
+            {categories.map((category) => (
+              <Button
+                key={category.id}
+                variant={selectedCategory === category.id ? "default" : "outline"}
+                onClick={() => setSelectedCategory(category.id)}
+                className="rounded-full"
+              >
+                {category.name}
+              </Button>
+            ))}
+          </div>
+        )}
+
         {!products || products.length === 0 ? (
           <div className="text-center py-20">
             <p className="text-xl text-muted-foreground">
