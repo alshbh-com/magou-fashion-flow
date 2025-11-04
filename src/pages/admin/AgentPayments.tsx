@@ -59,6 +59,13 @@ const AgentPayments = () => {
       
       if (ordersError) throw ordersError;
 
+      // Calculate total for all assigned orders regardless of status
+      const totalAssigned = orders?.reduce((sum, order) => {
+        return sum + parseFloat(order.total_amount?.toString() || "0") +
+               parseFloat(order.shipping_cost?.toString() || "0") -
+               parseFloat(order.agent_shipping_cost?.toString() || "0");
+      }, 0) || 0;
+
       // Calculate total for delivered orders only
       const totalDelivered = orders?.reduce((sum, order) => {
         if (order.status === 'delivered') {
@@ -96,8 +103,8 @@ const AgentPayments = () => {
         return sum + parseFloat(p.amount.toString());
       }, 0) || 0;
 
-      // Agent receivables = delivered - returns - advance payments
-      const agentReceivables = totalDelivered - totalReturns - totalPaid;
+      // Agent receivables = assigned orders - returns - advance payments
+      const agentReceivables = totalAssigned - totalReturns - totalPaid;
 
       return {
         payments,
