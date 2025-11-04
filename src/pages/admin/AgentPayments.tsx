@@ -59,58 +59,68 @@ const AgentPayments = () => {
       
       if (ordersError) throw ordersError;
 
-      // Calculate total for all assigned orders regardless of status
-      const totalAssigned = orders?.reduce((sum, order) => {
-        return sum + parseFloat(order.total_amount?.toString() || "0") +
-               parseFloat(order.shipping_cost?.toString() || "0") -
-               parseFloat(order.agent_shipping_cost?.toString() || "0");
-      }, 0) || 0;
+      // Calculate totals
+      const calcOrderAmount = (o: any) =>
+        parseFloat(o.total_amount?.toString() || "0") +
+        parseFloat(o.shipping_cost?.toString() || "0") -
+        parseFloat(o.agent_shipping_cost?.toString() || "0");
 
-      // Calculate total for delivered orders only
+      // Delivered sum
       const totalDelivered = orders?.reduce((sum, order) => {
         if (order.status === 'delivered') {
-          return sum + parseFloat(order.total_amount?.toString() || "0") + 
-                 parseFloat(order.shipping_cost?.toString() || "0") - 
-                 parseFloat(order.agent_shipping_cost?.toString() || "0");
+          return sum + calcOrderAmount(order);
         }
         return sum;
       }, 0) || 0;
 
-      // Get returns for this agent
-      const { data: returns, error: returnsError } = await supabase
-        .from("returns")
-        .select("return_amount")
-        .eq("delivery_agent_id", selectedAgentId);
-      
-      if (returnsError) throw returnsError;
-
-      const totalReturns = returns?.reduce((sum, ret) => {
-        return sum + parseFloat(ret.return_amount?.toString() || "0");
+      // Open receivables: assigned but not delivered/returned/cancelled
+      const totalOpen = orders?.reduce((sum, order) => {
+        if (order.status !== 'delivered' && order.status !== 'returned' && order.status !== 'cancelled') {
+          return sum + calcOrderAmount(order);
+        }
+        return sum;
       }, 0) || 0;
 
-      // Get payment records (advance payments)
+      // Manual advance payments
       const { data: payments, error: paymentsError } = await supabase
         .from("agent_payments")
         .select("*")
         .eq("delivery_agent_id", selectedAgentId)
         .eq("payment_type", "payment")
         .order("created_at", { ascending: false });
-      
       if (paymentsError) throw paymentsError;
 
-      // Calculate total paid (advance payment)
-      const totalPaid = payments?.reduce((sum, p) => {
-        return sum + parseFloat(p.amount.toString());
-      }, 0) || 0;
+      const totalPaid = payments?.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0) || 0;
 
-      // Agent receivables = assigned orders - returns - advance payments
-      const agentReceivables = totalAssigned - totalReturns - totalPaid;
+      // Settlements to zero receivables
+      const { data: settlements, error: settlementsError } = await supabase
+        .from("agent_payments")
+        .select("amount")
+        .eq("delivery_agent_id", selectedAgentId)
+        .eq("payment_type", "settlement");
+      if (settlementsError) throw settlementsError;
+      const totalSettled = settlements?.reduce((sum, s) => sum + parseFloat(s.amount.toString()), 0) || 0;
+
+      // Delivered resets
+      const { data: deliveredResets, error: deliveredResetsError } = await supabase
+        .from("agent_payments")
+        .select("amount")
+        .eq("delivery_agent_id", selectedAgentId)
+        .eq("payment_type", "delivered_reset");
+      if (deliveredResetsError) throw deliveredResetsError;
+      const deliveredReset = deliveredResets?.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0) || 0;
+
+      const agentReceivables = Math.max(0, totalOpen - totalPaid - totalSettled);
+      const totalDeliveredNet = Math.max(0, totalDelivered - deliveredReset);
 
       return {
         payments,
         totalDelivered,
-        totalReturns,
+        totalDeliveredNet,
         totalPaid,
+        totalSettled,
+        deliveredReset,
+        totalOpen,
         agentReceivables,
       };
     },
@@ -151,13 +161,13 @@ const AgentPayments = () => {
     mutationFn: async () => {
       if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
       
-      // Add a negative payment equal to total delivered to zero it out
+      // Record a delivered reset to zero the displayed delivered total
       const { error } = await supabase
         .from("agent_payments")
         .insert({
           delivery_agent_id: selectedAgentId,
-          amount: (agentData?.totalDelivered || 0),
-          payment_type: "payment",
+          amount: (agentData?.totalDeliveredNet || 0),
+          payment_type: "delivered_reset",
           notes: "إعادة تعيين - تصفير إجمالي الطلبات المسلمة"
         });
       
@@ -176,15 +186,28 @@ const AgentPayments = () => {
   const settleMutation = useMutation({
     mutationFn: async () => {
       if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
-      
-      // Delete all payment records for this agent
-      const { error } = await supabase
+
+      // 1) Insert a settlement to zero out receivables
+      const settleAmount = agentData?.agentReceivables || 0;
+      if (settleAmount > 0) {
+        const { error: insertError } = await supabase
+          .from("agent_payments")
+          .insert({
+            delivery_agent_id: selectedAgentId,
+            amount: settleAmount,
+            payment_type: "settlement",
+            notes: "تقفيل - تسوية المستحقات"
+          });
+        if (insertError) throw insertError;
+      }
+
+      // 2) Delete all manual advance payments so advance shows 0
+      const { error: deleteError } = await supabase
         .from("agent_payments")
         .delete()
         .eq("delivery_agent_id", selectedAgentId)
         .eq("payment_type", "payment");
-      
-      if (error) throw error;
+      if (deleteError) throw deleteError;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
@@ -193,6 +216,27 @@ const AgentPayments = () => {
     },
     onError: () => {
       toast.error("حدث خطأ أثناء التقفيل");
+    }
+  });
+
+  // Reset only the advance payments (manual payments)
+  const resetAdvanceMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
+
+      const { error } = await supabase
+        .from("agent_payments")
+        .delete()
+        .eq("delivery_agent_id", selectedAgentId)
+        .eq("payment_type", "payment");
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
+      toast.success("تمت إعادة تعيين الدفعة المقدمة");
+    },
+    onError: () => {
+      toast.error("حدث خطأ أثناء إعادة تعيين الدفعة المقدمة");
     }
   });
 
@@ -405,11 +449,34 @@ const AgentPayments = () => {
                         </AlertDialog>
                       </div>
                       <p className="text-2xl font-bold text-blue-600">
-                        {agentData.totalDelivered.toFixed(2)} ج.م
+                        {agentData.totalDeliveredNet.toFixed(2)} ج.م
                       </p>
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">دفعة مقدمة</p>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-sm text-muted-foreground">دفعة مقدمة</p>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="outline" size="sm">
+                              إعادة تعيين
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>تأكيد إعادة تعيين الدفعة المقدمة</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                سيتم تصفير إجمالي الدفعات المقدمة ويمكنك إدخال مبلغ جديد لاحقًا.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => resetAdvanceMutation.mutate()}>
+                                موافق
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
                       <p className="text-2xl font-bold text-green-600">
                         {agentData.totalPaid.toFixed(2)} ج.م
                       </p>
