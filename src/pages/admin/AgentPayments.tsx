@@ -51,7 +51,7 @@ const AgentPayments = () => {
     queryFn: async () => {
       if (!selectedAgentId) return null;
       
-      // Get all orders for this agent and calculate total owed
+      // Get all orders for this agent
       const { data: orders, error: ordersError } = await supabase
         .from("orders")
         .select("total_amount, shipping_cost, agent_shipping_cost, status")
@@ -59,8 +59,8 @@ const AgentPayments = () => {
       
       if (ordersError) throw ordersError;
 
-      const totalOwed = orders?.reduce((sum, order) => {
-        // Only count delivered orders
+      // Calculate total for delivered orders only
+      const totalDelivered = orders?.reduce((sum, order) => {
         if (order.status === 'delivered') {
           return sum + parseFloat(order.total_amount?.toString() || "0") + 
                  parseFloat(order.shipping_cost?.toString() || "0") - 
@@ -69,7 +69,7 @@ const AgentPayments = () => {
         return sum;
       }, 0) || 0;
 
-      // Get returns for this agent and subtract from total owed
+      // Get returns for this agent
       const { data: returns, error: returnsError } = await supabase
         .from("returns")
         .select("return_amount")
@@ -81,9 +81,7 @@ const AgentPayments = () => {
         return sum + parseFloat(ret.return_amount?.toString() || "0");
       }, 0) || 0;
 
-      const finalOwed = totalOwed - totalReturns;
-
-      // Get payment records
+      // Get payment records (advance payments)
       const { data: payments, error: paymentsError } = await supabase
         .from("agent_payments")
         .select("*")
@@ -97,10 +95,15 @@ const AgentPayments = () => {
         return sum + parseFloat(p.amount.toString());
       }, 0) || 0;
 
+      // Agent receivables = delivered - returns - advance payments
+      const agentReceivables = totalDelivered - totalReturns - totalPaid;
+
       return {
         payments,
-        totalOwed: finalOwed,
+        totalDelivered,
+        totalReturns,
         totalPaid,
+        agentReceivables,
       };
     },
     enabled: !!selectedAgentId
@@ -133,17 +136,16 @@ const AgentPayments = () => {
     }
   });
 
-  const resetOrdersMutation = useMutation({
+  const resetDeliveredMutation = useMutation({
     mutationFn: async () => {
       if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
       
-      // This doesn't actually delete orders, just marks them as settled
-      // We'll add a note to payments indicating this reset
+      // Add a negative payment equal to total delivered to zero it out
       const { error } = await supabase
         .from("agent_payments")
         .insert({
           delivery_agent_id: selectedAgentId,
-          amount: -(agentData?.totalOwed || 0),
+          amount: -(agentData?.totalDelivered || 0),
           payment_type: "payment",
           notes: "إعادة تعيين - تصفير إجمالي الطلبات المسلمة"
         });
@@ -358,7 +360,13 @@ const AgentPayments = () => {
               <Card className="mb-6 bg-accent">
                 <CardContent className="p-6">
                   <h3 className="font-bold text-lg mb-3">{selectedAgent.name}</h3>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">مستحقات المندوب</p>
+                      <p className="text-2xl font-bold text-primary">
+                        {agentData.agentReceivables.toFixed(2)} ج.م
+                      </p>
+                    </div>
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <p className="text-sm text-muted-foreground">إجمالي الطلبات المسلمة</p>
@@ -377,7 +385,7 @@ const AgentPayments = () => {
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel>إلغاء</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => resetOrdersMutation.mutate()}>
+                              <AlertDialogAction onClick={() => resetDeliveredMutation.mutate()}>
                                 موافق
                               </AlertDialogAction>
                             </AlertDialogFooter>
@@ -385,7 +393,7 @@ const AgentPayments = () => {
                         </AlertDialog>
                       </div>
                       <p className="text-2xl font-bold text-blue-600">
-                        {agentData.totalOwed.toFixed(2)} ج.م
+                        {agentData.totalDelivered.toFixed(2)} ج.م
                       </p>
                     </div>
                     <div>
