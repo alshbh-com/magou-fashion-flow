@@ -86,6 +86,7 @@ const AgentPayments = () => {
         .from("agent_payments")
         .select("*")
         .eq("delivery_agent_id", selectedAgentId)
+        .eq("payment_type", "payment")
         .order("created_at", { ascending: false });
       
       if (paymentsError) throw paymentsError;
@@ -106,7 +107,10 @@ const AgentPayments = () => {
         agentReceivables,
       };
     },
-    enabled: !!selectedAgentId
+    enabled: !!selectedAgentId,
+    refetchInterval: 1000,
+    refetchIntervalInBackground: true,
+    staleTime: 0
   });
 
   const createMutation = useMutation({
@@ -145,7 +149,7 @@ const AgentPayments = () => {
         .from("agent_payments")
         .insert({
           delivery_agent_id: selectedAgentId,
-          amount: -(agentData?.totalDelivered || 0),
+          amount: (agentData?.totalDelivered || 0),
           payment_type: "payment",
           notes: "إعادة تعيين - تصفير إجمالي الطلبات المسلمة"
         });
@@ -170,7 +174,8 @@ const AgentPayments = () => {
       const { error } = await supabase
         .from("agent_payments")
         .delete()
-        .eq("delivery_agent_id", selectedAgentId);
+        .eq("delivery_agent_id", selectedAgentId)
+        .eq("payment_type", "payment");
       
       if (error) throw error;
     },
