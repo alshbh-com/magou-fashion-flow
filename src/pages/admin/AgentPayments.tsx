@@ -45,7 +45,7 @@ const AgentPayments = () => {
     },
   });
 
-  // Calculate totals dynamically from orders and payments
+  // Calculate totals dynamically from orders, returns, and payments
   const { data: agentData, isLoading } = useQuery({
     queryKey: ["agent_payments_summary", selectedAgentId],
     queryFn: async () => {
@@ -54,16 +54,34 @@ const AgentPayments = () => {
       // Get all orders for this agent and calculate total owed
       const { data: orders, error: ordersError } = await supabase
         .from("orders")
-        .select("total_amount, shipping_cost, agent_shipping_cost")
+        .select("total_amount, shipping_cost, agent_shipping_cost, status")
         .eq("delivery_agent_id", selectedAgentId);
       
       if (ordersError) throw ordersError;
 
       const totalOwed = orders?.reduce((sum, order) => {
-        return sum + parseFloat(order.total_amount?.toString() || "0") + 
-               parseFloat(order.shipping_cost?.toString() || "0") - 
-               parseFloat(order.agent_shipping_cost?.toString() || "0");
+        // Only count delivered orders
+        if (order.status === 'delivered') {
+          return sum + parseFloat(order.total_amount?.toString() || "0") + 
+                 parseFloat(order.shipping_cost?.toString() || "0") - 
+                 parseFloat(order.agent_shipping_cost?.toString() || "0");
+        }
+        return sum;
       }, 0) || 0;
+
+      // Get returns for this agent and subtract from total owed
+      const { data: returns, error: returnsError } = await supabase
+        .from("returns")
+        .select("return_amount")
+        .eq("delivery_agent_id", selectedAgentId);
+      
+      if (returnsError) throw returnsError;
+
+      const totalReturns = returns?.reduce((sum, ret) => {
+        return sum + parseFloat(ret.return_amount?.toString() || "0");
+      }, 0) || 0;
+
+      const finalOwed = totalOwed - totalReturns;
 
       // Get payment records
       const { data: payments, error: paymentsError } = await supabase
@@ -74,16 +92,15 @@ const AgentPayments = () => {
       
       if (paymentsError) throw paymentsError;
 
-      // Calculate total paid
+      // Calculate total paid (advance payment)
       const totalPaid = payments?.reduce((sum, p) => {
         return sum + parseFloat(p.amount.toString());
       }, 0) || 0;
 
       return {
         payments,
-        totalOwed,
+        totalOwed: finalOwed,
         totalPaid,
-        balance: totalOwed - totalPaid
       };
     },
     enabled: !!selectedAgentId
@@ -106,12 +123,62 @@ const AgentPayments = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
+      queryClient.invalidateQueries({ queryKey: ["agent_orders_summary"] });
       toast.success("تم إضافة الدفعة بنجاح");
       setOpen(false);
       setFormData({ amount: "", notes: "" });
     },
     onError: () => {
       toast.error("حدث خطأ أثناء الإضافة");
+    }
+  });
+
+  const resetOrdersMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
+      
+      // This doesn't actually delete orders, just marks them as settled
+      // We'll add a note to payments indicating this reset
+      const { error } = await supabase
+        .from("agent_payments")
+        .insert({
+          delivery_agent_id: selectedAgentId,
+          amount: -(agentData?.totalOwed || 0),
+          payment_type: "payment",
+          notes: "إعادة تعيين - تصفير إجمالي الطلبات المسلمة"
+        });
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
+      queryClient.invalidateQueries({ queryKey: ["agent_orders_summary"] });
+      toast.success("تم إعادة التعيين بنجاح");
+    },
+    onError: () => {
+      toast.error("حدث خطأ أثناء إعادة التعيين");
+    }
+  });
+
+  const settleMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
+      
+      // Delete all payment records for this agent
+      const { error } = await supabase
+        .from("agent_payments")
+        .delete()
+        .eq("delivery_agent_id", selectedAgentId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
+      queryClient.invalidateQueries({ queryKey: ["agent_orders_summary"] });
+      toast.success("تم التقفيل بنجاح");
+    },
+    onError: () => {
+      toast.error("حدث خطأ أثناء التقفيل");
     }
   });
 
@@ -149,6 +216,7 @@ const AgentPayments = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
+      queryClient.invalidateQueries({ queryKey: ["agent_orders_summary"] });
       toast.success("تم الحذف بنجاح");
     },
     onError: () => {
@@ -200,13 +268,38 @@ const AgentPayments = () => {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>دفعات المندوب</CardTitle>
-            <Dialog open={open} onOpenChange={setOpen}>
-              <DialogTrigger asChild>
-                <Button disabled={!selectedAgentId}>
-                  <Plus className="ml-2 h-4 w-4" />
-                  إضافة دفعة
-                </Button>
-              </DialogTrigger>
+            <div className="flex gap-2">
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button 
+                    disabled={!selectedAgentId}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    تقفيل
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>تأكيد التقفيل</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      هل أنت متأكد من تقفيل حساب المندوب؟ سيتم حذف جميع سجلات الدفعات.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => settleMutation.mutate()}>
+                      موافق
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+              <Dialog open={open} onOpenChange={setOpen}>
+                <DialogTrigger asChild>
+                  <Button disabled={!selectedAgentId}>
+                    <Plus className="ml-2 h-4 w-4" />
+                    إضافة دفعة
+                  </Button>
+                </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
                   <DialogTitle>إضافة دفعة جديدة</DialogTitle>
@@ -241,7 +334,8 @@ const AgentPayments = () => {
                   </Button>
                 </form>
               </DialogContent>
-            </Dialog>
+              </Dialog>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="mb-6">
@@ -264,23 +358,40 @@ const AgentPayments = () => {
               <Card className="mb-6 bg-accent">
                 <CardContent className="p-6">
                   <h3 className="font-bold text-lg mb-3">{selectedAgent.name}</h3>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <p className="text-sm text-muted-foreground">إجمالي المستحق (من الأوردرات)</p>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-sm text-muted-foreground">إجمالي الطلبات المسلمة</p>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="outline" size="sm">
+                              إعادة تعيين
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>تأكيد إعادة التعيين</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                هل أنت متأكد من إعادة تعيين إجمالي الطلبات المسلمة؟ سيتم تصفير المبلغ.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                              <AlertDialogAction onClick={() => resetOrdersMutation.mutate()}>
+                                موافق
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
                       <p className="text-2xl font-bold text-blue-600">
                         {agentData.totalOwed.toFixed(2)} ج.م
                       </p>
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">إجمالي المدفوع</p>
+                      <p className="text-sm text-muted-foreground">دفعة مقدمة</p>
                       <p className="text-2xl font-bold text-green-600">
                         {agentData.totalPaid.toFixed(2)} ج.م
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">الرصيد المتبقي</p>
-                      <p className={`text-2xl font-bold ${agentData.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                        {agentData.balance.toFixed(2)} ج.م
                       </p>
                     </div>
                   </div>
