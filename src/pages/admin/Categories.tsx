@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -28,6 +29,9 @@ const Categories = () => {
     display_order: 0,
     is_active: true
   });
+  
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   const { data: categories, isLoading } = useQuery({
     queryKey: ["categories"],
@@ -42,11 +46,40 @@ const Categories = () => {
     },
   });
 
+  const handleImageUpload = async (file: File): Promise<string> => {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Math.random().toString(36).substring(2)}.${fileExt}`;
+    const filePath = `categories/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('products')
+      .upload(filePath, file);
+
+    if (uploadError) throw uploadError;
+
+    const { data } = supabase.storage
+      .from('products')
+      .getPublicUrl(filePath);
+
+    return data.publicUrl;
+  };
+
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
+      let finalImageUrl = data.image_url;
+      
+      if (imageFile) {
+        setUploadingImage(true);
+        try {
+          finalImageUrl = await handleImageUpload(imageFile);
+        } finally {
+          setUploadingImage(false);
+        }
+      }
+      
       const { error } = await supabase
         .from("categories")
-        .insert(data);
+        .insert({ ...data, image_url: finalImageUrl });
       
       if (error) throw error;
     },
@@ -61,6 +94,7 @@ const Categories = () => {
         display_order: 0,
         is_active: true
       });
+      setImageFile(null);
     },
     onError: () => {
       toast.error("حدث خطأ أثناء الإضافة");
@@ -69,9 +103,20 @@ const Categories = () => {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string, data: typeof formData }) => {
+      let finalImageUrl = data.image_url;
+      
+      if (imageFile) {
+        setUploadingImage(true);
+        try {
+          finalImageUrl = await handleImageUpload(imageFile);
+        } finally {
+          setUploadingImage(false);
+        }
+      }
+      
       const { error } = await supabase
         .from("categories")
-        .update(data)
+        .update({ ...data, image_url: finalImageUrl })
         .eq("id", id);
       
       if (error) throw error;
@@ -81,6 +126,7 @@ const Categories = () => {
       toast.success("تم التعديل بنجاح");
       setEditOpen(false);
       setEditingCategory(null);
+      setImageFile(null);
     },
     onError: () => {
       toast.error("حدث خطأ أثناء التعديل");
@@ -179,12 +225,35 @@ const Categories = () => {
                   </div>
 
                   <div>
-                    <Label htmlFor="image_url">رابط الصورة</Label>
+                    <Label htmlFor="image_file">صورة القسم</Label>
+                    <div className="flex gap-2 items-center">
+                      <Input
+                        id="image_file"
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setImageFile(file);
+                            setFormData({...formData, image_url: ""});
+                          }
+                        }}
+                        className="flex-1"
+                      />
+                      {imageFile && (
+                        <span className="text-sm text-green-600">تم اختيار: {imageFile.name}</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">أو</p>
                     <Input
                       id="image_url"
                       value={formData.image_url}
-                      onChange={(e) => setFormData({...formData, image_url: e.target.value})}
-                      placeholder="https://..."
+                      onChange={(e) => {
+                        setFormData({...formData, image_url: e.target.value});
+                        setImageFile(null);
+                      }}
+                      placeholder="رابط الصورة (https://...)"
+                      className="mt-2"
                     />
                   </div>
 
@@ -207,8 +276,8 @@ const Categories = () => {
                     <Label htmlFor="is_active">نشط</Label>
                   </div>
                   
-                  <Button type="submit" className="w-full">
-                    حفظ
+                  <Button type="submit" className="w-full" disabled={uploadingImage}>
+                    {uploadingImage ? "جاري رفع الصورة..." : "حفظ"}
                   </Button>
                 </form>
               </DialogContent>
@@ -311,12 +380,35 @@ const Categories = () => {
               </div>
 
               <div>
-                <Label htmlFor="edit_image_url">رابط الصورة</Label>
+                <Label htmlFor="edit_image_file">صورة القسم</Label>
+                <div className="flex gap-2 items-center">
+                  <Input
+                    id="edit_image_file"
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setImageFile(file);
+                        setFormData({...formData, image_url: ""});
+                      }
+                    }}
+                    className="flex-1"
+                  />
+                  {imageFile && (
+                    <span className="text-sm text-green-600">تم اختيار: {imageFile.name}</span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">أو</p>
                 <Input
                   id="edit_image_url"
                   value={formData.image_url}
-                  onChange={(e) => setFormData({...formData, image_url: e.target.value})}
-                  placeholder="https://..."
+                  onChange={(e) => {
+                    setFormData({...formData, image_url: e.target.value});
+                    setImageFile(null);
+                  }}
+                  placeholder="رابط الصورة (https://...)"
+                  className="mt-2"
                 />
               </div>
 
@@ -339,8 +431,8 @@ const Categories = () => {
                 <Label htmlFor="edit_is_active">نشط</Label>
               </div>
               
-              <Button type="submit" className="w-full">
-                حفظ التعديلات
+              <Button type="submit" className="w-full" disabled={uploadingImage}>
+                {uploadingImage ? "جاري رفع الصورة..." : "حفظ التعديلات"}
               </Button>
             </form>
           </DialogContent>

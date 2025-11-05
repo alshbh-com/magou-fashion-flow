@@ -213,7 +213,6 @@ const AllOrders = () => {
                     <SelectItem value="delivered">تم التوصيل</SelectItem>
                     <SelectItem value="cancelled">ملغي</SelectItem>
                     <SelectItem value="returned">مرتجع</SelectItem>
-                    <SelectItem value="partially_returned">مرتجع جزئي</SelectItem>
                     <SelectItem value="delivered_with_modification">تم التوصيل مع التعديل</SelectItem>
                   </SelectContent>
                 </Select>
@@ -344,8 +343,6 @@ const AllOrders = () => {
                                   <SelectItem value="delivered">تم التوصيل</SelectItem>
                                   <SelectItem value="cancelled">ملغي</SelectItem>
                                   <SelectItem value="returned">مرتجع</SelectItem>
-                                  <SelectItem value="partially_returned">مرتجع جزئي</SelectItem>
-                                  <SelectItem value="return_no_shipping">مرتجع دون شحن</SelectItem>
                                 </SelectContent>
                               </Select>
                             ) : (
