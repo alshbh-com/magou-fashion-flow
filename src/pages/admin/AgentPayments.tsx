@@ -187,7 +187,15 @@ const AgentPayments = () => {
     mutationFn: async () => {
       if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
 
-      // 1) Insert a settlement to zero out receivables
+      // 1) Update all agent's orders to "delivered" status
+      const { error: ordersError } = await supabase
+        .from("orders")
+        .update({ status: "delivered" })
+        .eq("delivery_agent_id", selectedAgentId)
+        .in("status", ["pending", "shipped"]);
+      if (ordersError) throw ordersError;
+
+      // 2) Insert a settlement to zero out receivables
       const settleAmount = agentData?.agentReceivables || 0;
       if (settleAmount > 0) {
         const { error: insertError } = await supabase
@@ -201,7 +209,7 @@ const AgentPayments = () => {
         if (insertError) throw insertError;
       }
 
-      // 2) Delete all manual advance payments so advance shows 0
+      // 3) Delete all manual advance payments so advance shows 0
       const { error: deleteError } = await supabase
         .from("agent_payments")
         .delete()
@@ -212,7 +220,7 @@ const AgentPayments = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
       queryClient.invalidateQueries({ queryKey: ["agent_orders_summary"] });
-      toast.success("تم التقفيل بنجاح");
+      toast.success("تم التقفيل بنجاح - تم تحويل جميع الطلبات إلى تم التوصيل");
     },
     onError: () => {
       toast.error("حدث خطأ أثناء التقفيل");
