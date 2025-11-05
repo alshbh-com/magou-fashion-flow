@@ -18,6 +18,7 @@ import Statistics from "./pages/admin/Statistics";
 import Invoices from "./pages/admin/Invoices";
 import Governorates from "./pages/admin/Governorates";
 import AllOrders from "./pages/admin/AllOrders";
+import ResetData from "./pages/admin/ResetData";
 import BottomNav from "./components/BottomNav";
 import TopNav from "./components/TopNav";
 import NotFound from "./pages/NotFound";
@@ -48,6 +49,7 @@ const App = () => (
             <Route path="/admin/invoices" element={<Invoices />} />
             <Route path="/admin/governorates" element={<Governorates />} />
             <Route path="/admin/all-orders" element={<AllOrders />} />
+            <Route path="/admin/reset-data" element={<ResetData />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

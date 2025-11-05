@@ -10,7 +10,8 @@ import {
   DollarSign, 
   FileText, 
   BarChart, 
-  Settings
+  Settings,
+  Trash2
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import SearchBar from "@/components/admin/SearchBar";
@@ -92,6 +93,13 @@ const adminSections = [
     icon: ShoppingCart,
     path: "/admin/all-orders",
     color: "text-violet-500"
+  },
+  {
+    title: "إعادة تعيين البيانات",
+    description: "مسح جميع البيانات والبدء من جديد",
+    icon: Trash2,
+    path: "/admin/reset-data",
+    color: "text-red-600"
   }
 ];
 

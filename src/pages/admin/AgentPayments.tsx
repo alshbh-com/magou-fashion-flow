@@ -60,26 +60,28 @@ const AgentPayments = () => {
       if (ordersError) throw ordersError;
 
       // Calculate totals
-      const calcOrderAmount = (o: any) =>
-        parseFloat(o.total_amount?.toString() || "0") +
-        parseFloat(o.shipping_cost?.toString() || "0") -
-        parseFloat(o.agent_shipping_cost?.toString() || "0");
+      const calcOrderAmount = (o: any) => {
+        const totalAmount = parseFloat(o.total_amount?.toString() || "0");
+        const shippingCost = parseFloat(o.shipping_cost?.toString() || "0");
+        const agentShippingCost = parseFloat(o.agent_shipping_cost?.toString() || "0");
+        return totalAmount + shippingCost - agentShippingCost;
+      };
 
       // Delivered sum
-      const totalDelivered = orders?.reduce((sum, order) => {
+      const totalDelivered = (orders || []).reduce((sum, order) => {
         if (order.status === 'delivered') {
           return sum + calcOrderAmount(order);
         }
         return sum;
-      }, 0) || 0;
+      }, 0);
 
       // Open receivables: assigned but not delivered/returned/cancelled
-      const totalOpen = orders?.reduce((sum, order) => {
+      const totalOpen = (orders || []).reduce((sum, order) => {
         if (order.status !== 'delivered' && order.status !== 'returned' && order.status !== 'cancelled') {
           return sum + calcOrderAmount(order);
         }
         return sum;
-      }, 0) || 0;
+      }, 0);
 
       // Manual advance payments
       const { data: payments, error: paymentsError } = await supabase
