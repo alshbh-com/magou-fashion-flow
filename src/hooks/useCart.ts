@@ -31,13 +31,15 @@ export const useCart = create<CartStore>()(
       addItem: (item) => set((state) => {
         const existingItem = state.items.find(i => i.id === item.id);
         if (existingItem) {
+          // Update price to latest offer/price and increment quantity
           return {
             items: state.items.map(i =>
-              i.id === item.id ? { ...i, quantity: i.quantity + 1, price: item.price } : i
+              i.id === item.id ? { ...i, quantity: i.quantity + 1, price: item.price || i.price } : i
             )
           };
         }
-        return { items: [...state.items, { ...item, quantity: 1 }] };
+        // Add new item with quantity 1 and ensure price is set
+        return { items: [...state.items, { ...item, quantity: 1, price: item.price || 0 }] };
       }),
       
       removeItem: (id) => set((state) => ({

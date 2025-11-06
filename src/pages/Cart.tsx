@@ -117,7 +117,12 @@ const Cart = () => {
 
   const getProductPrice = (productId: string, quantity: number) => {
     const product = products?.find(p => p.id === productId);
-    if (!product) return 0;
+    const cartItem = items.find(i => i.id === productId);
+    
+    // If product not found in DB, use cart item price as fallback
+    if (!product) {
+      return cartItem?.price || 0;
+    }
 
     // Check for quantity pricing
     if (product.quantity_pricing && Array.isArray(product.quantity_pricing) && product.quantity_pricing.length > 0) {
@@ -130,7 +135,7 @@ const Cart = () => {
       }
     }
 
-    // Check for offer price
+    // Check for offer price (price per piece, will be multiplied by quantity later)
     if (product.is_offer && product.offer_price) {
       return parseFloat(product.offer_price.toString());
     }
