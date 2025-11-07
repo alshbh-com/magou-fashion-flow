@@ -37,6 +37,9 @@ const ResetData = () => {
         total_sales: 0,
         total_orders: 0
       });
+      
+      // Reset order number sequence
+      await supabase.rpc('reset_order_sequence');
     },
     onSuccess: () => {
       queryClient.invalidateQueries();
