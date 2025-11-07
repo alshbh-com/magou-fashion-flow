@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ArrowLeft, PackageX, Printer, Download, AlertTriangle, Trash2 } from "lucide-react";
+import { ArrowLeft, PackageX, Printer, Download, AlertTriangle, Trash2, MessageCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import * as XLSX from 'xlsx';
@@ -141,34 +141,44 @@ const AgentOrders = () => {
 
       let updates: any = { status: status as any };
       
-      // إذا كانت الحالة "مرتجع دون شحن"، خصم الشحن من المبلغ
-      if (status === "return_no_shipping" && removeShipping) {
+      // إذا كانت الحالة "مرتجع دون شحن"
+      if (status === "return_no_shipping") {
+        const totalAmount = parseFloat(order.total_amount?.toString() || "0");
         const customerShipping = parseFloat(order.shipping_cost?.toString() || "0");
+        const agentShipping = parseFloat(order.agent_shipping_cost?.toString() || "0");
+        const orderTotal = totalAmount + customerShipping;
         
-        // خصم الشحن من المستحقات
-        const { error: agentError } = await supabase
-          .from("delivery_agents")
-          .update({ 
-            total_owed: order.delivery_agent_id ? 
-              await supabase.from("delivery_agents")
-                .select("total_owed")
-                .eq("id", order.delivery_agent_id)
-                .single()
-                .then(({ data }) => parseFloat(data?.total_owed?.toString() || "0") - customerShipping)
-              : 0
-          })
-          .eq("id", order.delivery_agent_id!);
+        // إلغاء تعيين المندوب (سيذهب الأوردر لجميع الأوردرات)
+        updates.delivery_agent_id = null;
         
-        if (agentError) throw agentError;
-
-        // إضافة سجل دفع
-        await supabase.from("agent_payments").insert({
-          delivery_agent_id: order.delivery_agent_id,
-          order_id: id,
-          amount: -customerShipping,
-          payment_type: 'return',
-          notes: 'مرتجع دون شحن - خصم الشحن'
-        });
+        if (order.delivery_agent_id) {
+          // جلب البيانات الحالية للمندوب
+          const { data: agentData } = await supabase
+            .from("delivery_agents")
+            .select("total_owed")
+            .eq("id", order.delivery_agent_id)
+            .single();
+          
+          if (agentData) {
+            const currentOwed = parseFloat(agentData.total_owed?.toString() || "0");
+            // خصم سعر الأوردر من المستحقات
+            const newOwed = currentOwed - orderTotal + agentShipping;
+            
+            await supabase
+              .from("delivery_agents")
+              .update({ total_owed: newOwed })
+              .eq("id", order.delivery_agent_id);
+            
+            // إضافة سجل دفع لخصم سعر الأوردر
+            await supabase.from("agent_payments").insert({
+              delivery_agent_id: order.delivery_agent_id,
+              order_id: id,
+              amount: -(orderTotal - agentShipping),
+              payment_type: 'return',
+              notes: 'مرتجع دون شحن - إلغاء المستحقات وإضافة شحن المندوب للدفعة المقدمة'
+            });
+          }
+        }
       }
 
       const { error } = await supabase
@@ -182,6 +192,7 @@ const AgentOrders = () => {
       queryClient.invalidateQueries({ queryKey: ["agent-orders"] });
       queryClient.invalidateQueries({ queryKey: ["agent_payments"] });
       queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
+      queryClient.invalidateQueries({ queryKey: ["all-orders"] });
       toast.success("تم تحديث الحالة");
     },
   });
@@ -951,139 +962,109 @@ const AgentOrders = () => {
                               </AlertDialogFooter>
                             </AlertDialogContent>
                           </AlertDialog>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2 flex-wrap">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handlePrintOrder(order)}
-                              title="طباعة الفاتورة"
-                            >
-                              <Printer className="h-4 w-4" />
-                            </Button>
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                >
-                                  <PackageX className="ml-2 h-4 w-4" />
-                                  مرتجع
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>تسجيل مرتجع</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    هل أنت متأكد من تسجيل هذا الأوردر كمرتجع؟
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>إلغاء</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => {
-                                    handleOpenReturnDialog(order);
-                                  }}>
-                                    تأكيد
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    هل أنت متأكد من حذف هذا الأوردر؟ سيتم حذف جميع البيانات المرتبطة به. هذا الإجراء لا يمكن التراجع عنه.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>إلغاء</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => deleteOrderMutation.mutate(order.id)}>
-                                    حذف
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                >
-                                  إزالة مندوب
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>تأكيد إزالة المندوب</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    هل أنت متأكد من إزالة المندوب من هذا الأوردر؟ سيتم إرجاع الأوردر إلى قائمة الأوردرات غير المعينة.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>إلغاء</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => unassignAgentMutation.mutate(order.id)}>
-                                    إزالة
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2 flex-wrap">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handlePrintOrder(order)}
-                              title="طباعة الفاتورة"
-                            >
-                              <Printer className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setPendingReturnOrder(order);
-                                setConfirmReturnDialogOpen(true);
-                              }}
-                            >
-                              <PackageX className="ml-2 h-4 w-4" />
-                              مرتجع
-                            </Button>
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              onClick={() => {
-                                if (window.confirm("هل أنت متأكد من حذف الأوردر؟")) {
-                                  deleteOrderMutation.mutate(order.id);
-                                }
-                              }}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                if (window.confirm("هل أنت متأكد من إلغاء تعيين المندوب؟ سيتم إرجاع الأوردر إلى قائمة الأوردرات")) {
-                                  unassignAgentMutation.mutate(order.id);
-                                }
-                              }}
-                            >
-                              إلغاء التعيين
-                            </Button>
-                          </div>
-                        </TableCell>
+                         </TableCell>
+                         <TableCell>
+                           <div className="flex gap-2 flex-wrap">
+                             <Button
+                               variant="ghost"
+                               size="icon"
+                               onClick={() => {
+                                 const phone = order.customers?.phone || "";
+                                 const formattedPhone = phone.startsWith("0") ? `+2${phone.substring(1)}` : phone;
+                                 const message = `مرحباً ${order.customers?.name}، تم شحن طلبك رقم #${order.order_number}. سيصلك قريباً مع مندوب التوصيل.`;
+                                 window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`, '_blank');
+                               }}
+                               title="تأكيد عبر واتساب"
+                               className="bg-green-500 hover:bg-green-600 text-white"
+                             >
+                               <MessageCircle className="h-4 w-4" />
+                             </Button>
+                             <Button
+                               variant="ghost"
+                               size="icon"
+                               onClick={() => handlePrintOrder(order)}
+                               title="طباعة الفاتورة"
+                             >
+                               <Printer className="h-4 w-4" />
+                             </Button>
+                             <AlertDialog>
+                               <AlertDialogTrigger asChild>
+                                 <Button
+                                   variant="outline"
+                                   size="sm"
+                                 >
+                                   <PackageX className="ml-2 h-4 w-4" />
+                                   مرتجع
+                                 </Button>
+                               </AlertDialogTrigger>
+                               <AlertDialogContent>
+                                 <AlertDialogHeader>
+                                   <AlertDialogTitle>تأكيد المرتجع</AlertDialogTitle>
+                                   <AlertDialogDescription>
+                                     هل أنت متأكد من تسجيل هذا الأوردر كمرتجع؟
+                                   </AlertDialogDescription>
+                                 </AlertDialogHeader>
+                                 <AlertDialogFooter>
+                                   <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                                   <AlertDialogAction onClick={() => {
+                                     setPendingReturnOrder(order);
+                                     setConfirmReturnDialogOpen(true);
+                                   }}>
+                                     تأكيد
+                                   </AlertDialogAction>
+                                 </AlertDialogFooter>
+                               </AlertDialogContent>
+                             </AlertDialog>
+                             <AlertDialog>
+                               <AlertDialogTrigger asChild>
+                                 <Button
+                                   variant="destructive"
+                                   size="sm"
+                                 >
+                                   <Trash2 className="h-4 w-4" />
+                                 </Button>
+                               </AlertDialogTrigger>
+                               <AlertDialogContent>
+                                 <AlertDialogHeader>
+                                   <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
+                                   <AlertDialogDescription>
+                                     هل أنت متأكد من حذف الأوردر؟ سيتم حذف جميع البيانات المرتبطة به.
+                                   </AlertDialogDescription>
+                                 </AlertDialogHeader>
+                                 <AlertDialogFooter>
+                                   <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                                   <AlertDialogAction onClick={() => deleteOrderMutation.mutate(order.id)}>
+                                     حذف
+                                   </AlertDialogAction>
+                                 </AlertDialogFooter>
+                               </AlertDialogContent>
+                             </AlertDialog>
+                             <AlertDialog>
+                               <AlertDialogTrigger asChild>
+                                 <Button
+                                   variant="outline"
+                                   size="sm"
+                                 >
+                                   إلغاء التعيين
+                                 </Button>
+                               </AlertDialogTrigger>
+                               <AlertDialogContent>
+                                 <AlertDialogHeader>
+                                   <AlertDialogTitle>تأكيد إلغاء التعيين</AlertDialogTitle>
+                                   <AlertDialogDescription>
+                                     هل أنت متأكد من إلغاء تعيين المندوب؟ سيتم إرجاع الأوردر إلى قائمة الأوردرات.
+                                   </AlertDialogDescription>
+                                 </AlertDialogHeader>
+                                 <AlertDialogFooter>
+                                   <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                                   <AlertDialogAction onClick={() => unassignAgentMutation.mutate(order.id)}>
+                                     إلغاء التعيين
+                                   </AlertDialogAction>
+                                 </AlertDialogFooter>
+                               </AlertDialogContent>
+                             </AlertDialog>
+                           </div>
+                         </TableCell>
                       </TableRow>
                       );
                     })}

@@ -14,7 +14,7 @@ export interface CartItem {
 
 interface CartStore {
   items: CartItem[];
-  addItem: (item: Omit<CartItem, 'quantity'>) => void;
+  addItem: (item: Omit<CartItem, 'quantity'>, maxStock?: number) => void;
   removeItem: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
   updateItemDetails: (id: string, size?: string, color?: string) => void;
@@ -28,9 +28,13 @@ export const useCart = create<CartStore>()(
     (set, get) => ({
       items: [],
       
-      addItem: (item) => set((state) => {
+      addItem: (item, maxStock?: number) => set((state) => {
         const existingItem = state.items.find(i => i.id === item.id);
         if (existingItem) {
+          // التحقق من الكمية المتاحة عند الزيادة
+          if (maxStock !== undefined && existingItem.quantity >= maxStock) {
+            return state; // لا تزيد الكمية إذا وصلت للحد الأقصى
+          }
           // Update price to latest offer/price and increment quantity
           return {
             items: state.items.map(i =>

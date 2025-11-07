@@ -162,6 +162,15 @@ const Cart = () => {
       return;
     }
 
+    // التحقق من المخزن قبل إنشاء الطلب
+    for (const item of items) {
+      const product = products?.find(p => p.id === item.id);
+      if (product && product.stock < item.quantity) {
+        toast.error(`الكمية المتاحة من ${item.name} هي ${product.stock} فقط`);
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
@@ -265,6 +274,18 @@ const Cart = () => {
           .insert(orderItems);
 
         if (itemsError) throw itemsError;
+
+        // خصم الكمية من المخزن
+        for (const item of items) {
+          const product = products?.find(p => p.id === item.id);
+          if (product) {
+            const newStock = product.stock - item.quantity;
+            await supabase
+              .from("products")
+              .update({ stock: newStock })
+              .eq("id", item.id);
+          }
+        }
 
         toast.success("تم إرسال الطلب بنجاح!");
         clearCart();
@@ -431,7 +452,14 @@ const Cart = () => {
                         <Button
                           variant="outline"
                           size="icon"
-                          onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                          onClick={() => {
+                            const product = products?.find(p => p.id === item.id);
+                            if (product && item.quantity >= product.stock) {
+                              toast.error(`الكمية المتاحة هي ${product.stock} فقط`);
+                              return;
+                            }
+                            updateQuantity(item.id, item.quantity + 1);
+                          }}
                           className="h-12 w-12"
                         >
                           <Plus className="h-5 w-5" />

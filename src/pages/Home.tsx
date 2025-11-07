@@ -45,6 +45,12 @@ const Home = () => {
   });
 
   const handleAddToCart = (product: any) => {
+    // التحقق من الكمية المتاحة في المخزن
+    if (product.stock <= 0) {
+      toast.error("نفذت الكمية من المخزن");
+      return;
+    }
+
     const price = product.is_offer && product.offer_price 
       ? parseFloat(product.offer_price.toString())
       : parseFloat(product.price.toString());
