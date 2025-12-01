@@ -11,10 +11,14 @@ import {
   FileText, 
   BarChart, 
   Settings,
-  Trash2
+  Trash2,
+  AlertTriangle
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import SearchBar from "@/components/admin/SearchBar";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { Badge } from "@/components/ui/badge";
 
 const adminSections = [
   {
@@ -103,6 +107,8 @@ const adminSections = [
   }
 ];
 
+const LOW_STOCK_THRESHOLD = 10;
+
 const Dashboard = () => {
   const navigate = useNavigate();
 
@@ -111,6 +117,20 @@ const Dashboard = () => {
       navigate("/settings");
     }
   }, [navigate]);
+
+  const { data: lowStockProducts, isLoading: isLoadingLowStock } = useQuery({
+    queryKey: ["lowStockProducts"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("products")
+        .select("*")
+        .lte("stock", LOW_STOCK_THRESHOLD)
+        .order("stock", { ascending: true });
+      
+      if (error) throw error;
+      return data;
+    }
+  });
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-accent/20 py-8">
@@ -121,6 +141,51 @@ const Dashboard = () => {
         <div className="mb-8">
           <SearchBar />
         </div>
+
+        {!isLoadingLowStock && lowStockProducts && lowStockProducts.length > 0 && (
+          <Card className="mb-8 border-destructive/50 bg-destructive/5">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-lg bg-destructive/10 flex items-center justify-center">
+                  <AlertTriangle className="w-6 h-6 text-destructive" />
+                </div>
+                <div>
+                  <CardTitle className="text-destructive">تنبيه: نفاذ المخزون</CardTitle>
+                  <CardDescription>
+                    يوجد {lowStockProducts.length} منتج مخزونه {LOW_STOCK_THRESHOLD} قطع أو أقل
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {lowStockProducts.map((product) => (
+                  <Card key={product.id} className="border-destructive/30">
+                    <CardContent className="p-4">
+                      <div className="flex items-start gap-3">
+                        {product.image_url && (
+                          <img 
+                            src={product.image_url} 
+                            alt={product.name}
+                            className="w-16 h-16 object-cover rounded"
+                          />
+                        )}
+                        <div className="flex-1">
+                          <h4 className="font-semibold text-sm mb-1">{product.name}</h4>
+                          <div className="flex items-center gap-2">
+                            <Badge variant={product.stock === 0 ? "destructive" : "secondary"}>
+                              {product.stock === 0 ? "نفذت الكمية" : `${product.stock} قطعة متبقية`}
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {adminSections.map((section) => (
