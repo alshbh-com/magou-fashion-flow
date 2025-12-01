@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { ShoppingCart, Tag } from "lucide-react";
 import { useCart } from "@/hooks/useCart";
 import { toast } from "sonner";
+import ProductImageCarousel from "@/components/ProductImageCarousel";
 
 const Home = () => {
   const { addItem } = useCart();
@@ -31,7 +32,11 @@ const Home = () => {
     queryFn: async () => {
       let query = supabase
         .from("products")
-        .select("*, categories(name)")
+        .select(`
+          *, 
+          categories(name),
+          product_images(id, image_url, display_order)
+        `)
         .order("created_at", { ascending: false });
       
       if (selectedCategory !== "all") {
@@ -90,7 +95,7 @@ const Home = () => {
       <header className="bg-primary text-primary-foreground py-8 shadow-lg">
         <div className="container mx-auto px-4">
           <h1 className="text-4xl md:text-5xl font-bold text-center">
-            Magou Fashion
+            Zahra Fashion
           </h1>
           <p className="text-center mt-2 text-primary-foreground/90">
             أفضل الأزياء العصرية
@@ -135,16 +140,22 @@ const Home = () => {
               const hasOffer = product.is_offer && product.offer_price;
               const displayPrice = hasOffer ? product.offer_price : product.price;
               
+              // جمع الصور من product_images و image_url
+              const images: string[] = [];
+              if (product.image_url) images.push(product.image_url);
+              if (product.product_images && Array.isArray(product.product_images)) {
+                const sortedImages = [...product.product_images]
+                  .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+                  .map(img => img.image_url);
+                images.push(...sortedImages);
+              }
+              
               return (
                 <Card key={product.id} className="group hover:shadow-xl transition-all duration-300 overflow-hidden">
-                  {/* Product Image */}
+                  {/* Product Image with Carousel */}
                   <div className="relative h-72 bg-muted overflow-hidden">
-                    {product.image_url ? (
-                      <img 
-                        src={product.image_url} 
-                        alt={product.name}
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
-                      />
+                    {images.length > 0 ? (
+                      <ProductImageCarousel images={images} productName={product.name} />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
                         <Tag className="w-16 h-16 text-muted-foreground" />

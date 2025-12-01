@@ -209,6 +209,51 @@ export type Database = {
         }
         Relationships: []
       }
+      offers: {
+        Row: {
+          created_at: string | null
+          description_ar: string | null
+          description_en: string | null
+          discount_percentage: number | null
+          end_date: string | null
+          id: string
+          image_url: string | null
+          is_active: boolean | null
+          start_date: string | null
+          title_ar: string
+          title_en: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description_ar?: string | null
+          description_en?: string | null
+          discount_percentage?: number | null
+          end_date?: string | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean | null
+          start_date?: string | null
+          title_ar: string
+          title_en?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description_ar?: string | null
+          description_en?: string | null
+          discount_percentage?: number | null
+          end_date?: string | null
+          id?: string
+          image_url?: string | null
+          is_active?: boolean | null
+          start_date?: string | null
+          title_ar?: string
+          title_en?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       order_items: {
         Row: {
           color: string | null
@@ -336,23 +381,65 @@ export type Database = {
           },
         ]
       }
+      product_images: {
+        Row: {
+          created_at: string | null
+          display_order: number | null
+          id: string
+          image_url: string
+          product_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          display_order?: number | null
+          id?: string
+          image_url: string
+          product_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          display_order?: number | null
+          id?: string
+          image_url?: string
+          product_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_images_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       products: {
         Row: {
           category_id: string | null
           color_options: string[] | null
           created_at: string | null
           description: string | null
+          description_ar: string | null
+          description_en: string | null
           details: string | null
+          discount_price: number | null
           id: string
           image_url: string | null
+          is_featured: boolean | null
           is_offer: boolean | null
+          low_stock_threshold: number | null
           name: string
+          name_ar: string | null
+          name_en: string | null
           offer_price: number | null
           price: number
           quantity_pricing: Json | null
+          rating: number | null
+          reviews_count: number | null
           size_options: string[] | null
           size_pricing: Json | null
           stock: number | null
+          stock_quantity: number | null
           updated_at: string | null
         }
         Insert: {
@@ -360,17 +447,27 @@ export type Database = {
           color_options?: string[] | null
           created_at?: string | null
           description?: string | null
+          description_ar?: string | null
+          description_en?: string | null
           details?: string | null
+          discount_price?: number | null
           id?: string
           image_url?: string | null
+          is_featured?: boolean | null
           is_offer?: boolean | null
+          low_stock_threshold?: number | null
           name: string
+          name_ar?: string | null
+          name_en?: string | null
           offer_price?: number | null
           price: number
           quantity_pricing?: Json | null
+          rating?: number | null
+          reviews_count?: number | null
           size_options?: string[] | null
           size_pricing?: Json | null
           stock?: number | null
+          stock_quantity?: number | null
           updated_at?: string | null
         }
         Update: {
@@ -378,17 +475,27 @@ export type Database = {
           color_options?: string[] | null
           created_at?: string | null
           description?: string | null
+          description_ar?: string | null
+          description_en?: string | null
           details?: string | null
+          discount_price?: number | null
           id?: string
           image_url?: string | null
+          is_featured?: boolean | null
           is_offer?: boolean | null
+          low_stock_threshold?: number | null
           name?: string
+          name_ar?: string | null
+          name_en?: string | null
           offer_price?: number | null
           price?: number
           quantity_pricing?: Json | null
+          rating?: number | null
+          reviews_count?: number | null
           size_options?: string[] | null
           size_pricing?: Json | null
           stock?: number | null
+          stock_quantity?: number | null
           updated_at?: string | null
         }
         Relationships: [
@@ -455,6 +562,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      settings: {
+        Row: {
+          created_at: string | null
+          id: string
+          password: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          password: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          password?: string
+        }
+        Relationships: []
       }
       statistics: {
         Row: {

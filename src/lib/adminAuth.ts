@@ -1,4 +1,4 @@
-const ADMIN_PASSWORD = "0127800624801204486263";
+const ADMIN_PASSWORD = "Magdi17121997";
 
 export const checkAdminAuth = (password: string): boolean => {
   return password === ADMIN_PASSWORD;
