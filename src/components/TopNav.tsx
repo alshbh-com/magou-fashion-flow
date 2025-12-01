@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/sheet";
 import { isAdminAuthenticated } from "@/lib/adminAuth";
 
-import logo from "@/assets/magou-logo.jpg";
+
 
 const TopNav = () => {
   const navigate = useNavigate();
@@ -91,13 +91,9 @@ const TopNav = () => {
             </SheetContent>
           </Sheet>
 
-          <button
-            className="flex items-center gap-3 hover:opacity-90 transition-opacity"
-            onClick={() => handleNavigate('/')}
-            aria-label="Magou Fashion - الصفحة الرئيسية"
-          >
-            <img src={logo} alt="شعار متجر Magou Fashion" className="h-10 w-auto rounded-sm" />
-          </button>
+          <div className="flex items-center gap-3">
+            <span className="text-xl font-bold text-primary">Zahra Fashion</span>
+          </div>
         </div>
       </div>
     </div>

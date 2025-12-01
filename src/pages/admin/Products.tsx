@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Trash2, Plus, ArrowLeft, Edit, Tag } from "lucide-react";
+import { Trash2, Plus, ArrowLeft, Edit, Tag, X, Upload } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -18,6 +18,7 @@ const Products = () => {
   const [open, setOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [additionalImages, setAdditionalImages] = useState<File[]>([]);
   
   const [formData, setFormData] = useState({
     name: "",
@@ -52,7 +53,10 @@ const Products = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("products")
-        .select("*")
+        .select(`
+          *,
+          product_images(id, image_url, display_order)
+        `)
         .order("created_at", { ascending: false });
       
       if (error) throw error;
@@ -64,7 +68,7 @@ const Products = () => {
     mutationFn: async (data: any) => {
       let imageUrl = data.image_url;
       
-      // Upload image if provided
+      // Upload main image if provided
       if (imageFile) {
         const fileExt = imageFile.name.split('.').pop();
         const fileName = `${Math.random()}.${fileExt}`;
@@ -98,6 +102,8 @@ const Products = () => {
         quantity_pricing: quantityPricing.length > 0 ? quantityPricing : null
       };
       
+      let productId: string;
+      
       if (editingProduct) {
         const { error } = await supabase
           .from("products")
@@ -105,12 +111,48 @@ const Products = () => {
           .eq("id", editingProduct.id);
         
         if (error) throw error;
+        productId = editingProduct.id;
       } else {
-        const { error } = await supabase
+        const { data: newProduct, error } = await supabase
           .from("products")
-          .insert(productData);
+          .insert(productData)
+          .select()
+          .single();
         
         if (error) throw error;
+        productId = newProduct.id;
+      }
+
+      // Upload additional images to product_images table
+      if (additionalImages.length > 0) {
+        const imageUploads = additionalImages.map(async (file, index) => {
+          const fileExt = file.name.split('.').pop();
+          const fileName = `${Math.random()}.${fileExt}`;
+          
+          const { error: uploadError } = await supabase.storage
+            .from('products')
+            .upload(fileName, file);
+          
+          if (uploadError) throw uploadError;
+          
+          const { data: { publicUrl } } = supabase.storage
+            .from('products')
+            .getPublicUrl(fileName);
+          
+          return {
+            product_id: productId,
+            image_url: publicUrl,
+            display_order: index + 1
+          };
+        });
+
+        const imageData = await Promise.all(imageUploads);
+        
+        const { error: imagesError } = await supabase
+          .from('product_images')
+          .insert(imageData);
+        
+        if (imagesError) throw imagesError;
       }
     },
     onSuccess: () => {
@@ -159,6 +201,7 @@ const Products = () => {
     });
     setEditingProduct(null);
     setImageFile(null);
+    setAdditionalImages([]);
   };
 
   const handleEdit = (product: any) => {
@@ -359,13 +402,54 @@ const Products = () => {
                   </div>
                   
                   <div>
-                    <Label htmlFor="image">صورة المنتج</Label>
+                    <Label htmlFor="image">صورة المنتج الرئيسية</Label>
                     <Input
                       id="image"
                       type="file"
                       accept="image/*"
                       onChange={(e) => setImageFile(e.target.files?.[0] || null)}
                     />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="additionalImages">صور إضافية للمنتج</Label>
+                    <Input
+                      id="additionalImages"
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        setAdditionalImages(files);
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      يمكنك رفع عدة صور. ستظهر بترتيب الإضافة في المتجر.
+                    </p>
+                    {additionalImages.length > 0 && (
+                      <div className="mt-2 flex gap-2 flex-wrap">
+                        {additionalImages.map((file, index) => (
+                          <div key={index} className="relative">
+                            <img 
+                              src={URL.createObjectURL(file)} 
+                              alt={`صورة ${index + 1}`}
+                              className="w-20 h-20 object-cover rounded border"
+                            />
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="icon"
+                              className="absolute -top-2 -right-2 h-6 w-6"
+                              onClick={() => {
+                                setAdditionalImages(prev => prev.filter((_, i) => i !== index));
+                              }}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   
                   <Button type="submit" className="w-full">
