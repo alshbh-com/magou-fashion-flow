@@ -59,6 +59,42 @@ export type Database = {
           },
         ]
       }
+      banners: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          display_order: number | null
+          id: string
+          image_url: string
+          is_active: boolean | null
+          link_url: string | null
+          title: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          display_order?: number | null
+          id?: string
+          image_url: string
+          is_active?: boolean | null
+          link_url?: string | null
+          title: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          display_order?: number | null
+          id?: string
+          image_url?: string
+          is_active?: boolean | null
+          link_url?: string | null
+          title?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       categories: {
         Row: {
           created_at: string | null
@@ -315,6 +351,7 @@ export type Database = {
           price: number
           quantity_pricing: Json | null
           size_options: string[] | null
+          size_pricing: Json | null
           stock: number | null
           updated_at: string | null
         }
@@ -332,6 +369,7 @@ export type Database = {
           price: number
           quantity_pricing?: Json | null
           size_options?: string[] | null
+          size_pricing?: Json | null
           stock?: number | null
           updated_at?: string | null
         }
@@ -349,6 +387,7 @@ export type Database = {
           price?: number
           quantity_pricing?: Json | null
           size_options?: string[] | null
+          size_pricing?: Json | null
           stock?: number | null
           updated_at?: string | null
         }
