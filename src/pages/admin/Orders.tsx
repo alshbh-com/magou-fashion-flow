@@ -156,6 +156,29 @@ const Orders = () => {
     },
   });
 
+  // Helper function to get product name from order item
+  const getProductInfo = (item: any) => {
+    try {
+      if (item.product_details) {
+        const details = JSON.parse(item.product_details);
+        return {
+          name: details.name || item.products?.name || "-",
+          price: details.price || item.price,
+          size: details.size || item.size,
+          color: details.color || item.color
+        };
+      }
+    } catch (e) {
+      // If JSON parse fails, use original values
+    }
+    return {
+      name: item.products?.name || "-",
+      price: item.price,
+      size: item.size,
+      color: item.color
+    };
+  };
+
   const deleteOrderMutation = useMutation({
     mutationFn: async (orderId: string) => {
       // First delete order items
@@ -251,9 +274,10 @@ const Orders = () => {
         "الهاتف": order.customers?.phone,
         "الهاتف الإضافي": (order.customers as any)?.phone2 || "-",
         "العنوان": order.customers?.address,
-        "تفاصيل الأوردر": order.order_details || order.order_items?.map((item: any) => 
-          `${item.products?.name} × ${item.quantity}`
-        ).join(", "),
+        "تفاصيل الأوردر": order.order_details || order.order_items?.map((item: any) => {
+          const productInfo = getProductInfo(item);
+          return `${productInfo.name} × ${item.quantity}`;
+        }).join(", "),
         "الصافي": totalAmount.toFixed(2),
         "الخصم": discount.toFixed(2),
         "الشحن": shippingCost.toFixed(2),
@@ -301,14 +325,17 @@ const Orders = () => {
     const selectedOrdersData = orders?.filter(o => selectedOrders.includes(o.id));
     
     const invoicesHtml = selectedOrdersData?.map(order => {
-      const orderItems = order.order_items?.map((item: any) => `
+      const orderItems = order.order_items?.map((item: any) => {
+        const productInfo = getProductInfo(item);
+        return `
         <tr>
-          <td style="border: 1px solid #ddd; padding: 8px;">${item.products?.name}</td>
+          <td style="border: 1px solid #ddd; padding: 8px;">${productInfo.name}</td>
           <td style="border: 1px solid #ddd; padding: 8px;">${item.quantity}</td>
-          <td style="border: 1px solid #ddd; padding: 8px;">${parseFloat(item.price.toString()).toFixed(2)} ج.م</td>
-          <td style="border: 1px solid #ddd; padding: 8px;">${(parseFloat(item.price.toString()) * item.quantity).toFixed(2)} ج.م</td>
+          <td style="border: 1px solid #ddd; padding: 8px;">${parseFloat(productInfo.price.toString()).toFixed(2)} ج.م</td>
+          <td style="border: 1px solid #ddd; padding: 8px;">${(parseFloat(productInfo.price.toString()) * item.quantity).toFixed(2)} ج.م</td>
         </tr>
-      `).join('');
+      `;
+      }).join('');
 
       const totalAmount = parseFloat(order.total_amount?.toString() || "0");
       const discount = parseFloat(order.discount?.toString() || "0");
@@ -616,11 +643,16 @@ const Orders = () => {
                           <TableCell className="max-w-xs">
                             {order.order_details || (
                               <div className="text-xs space-y-1">
-                                {order.order_items?.map((item: any, idx: number) => (
-                                  <div key={idx}>
-                                    {item.products?.name} × {item.quantity}
-                                  </div>
-                                ))}
+                                {order.order_items?.map((item: any, idx: number) => {
+                                  const productInfo = getProductInfo(item);
+                                  return (
+                                    <div key={idx}>
+                                      {productInfo.name} × {item.quantity}
+                                      {productInfo.size && <span className="text-muted-foreground"> - {productInfo.size}</span>}
+                                      {productInfo.color && <span className="text-muted-foreground"> - {productInfo.color}</span>}
+                                    </div>
+                                  );
+                                })}
                               </div>
                             )}
                           </TableCell>
