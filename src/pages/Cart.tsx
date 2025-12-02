@@ -151,8 +151,9 @@ const Cart = () => {
       return sum + (price * item.quantity);
     }, 0);
     const totalAfterDiscount = itemsTotal - customerInfo.discount;
-    // إذا كان الشحن مدفوع مسبقاً، لا نضيفه
-    return customerInfo.isShippingIncluded ? totalAfterDiscount : totalAfterDiscount;
+    // إذا كان الشحن مدفوع مسبقاً، لا نضيفه للمجموع
+    const shippingToAdd = customerInfo.isShippingIncluded ? 0 : customerInfo.shippingCost;
+    return totalAfterDiscount + shippingToAdd;
   };
 
   const handleSubmitOrder = async () => {
@@ -212,7 +213,13 @@ const Cart = () => {
             price: price,
             size: item.size || null,
             color: item.color || null,
-            product_details: item.details || null
+            product_details: JSON.stringify({
+              name: item.name,
+              price: price,
+              size: item.size || null,
+              color: item.color || null,
+              custom_details: item.details || null
+            })
           };
         });
 
@@ -269,7 +276,13 @@ const Cart = () => {
             price: price,
             size: item.size || null,
             color: item.color || null,
-            product_details: item.details || null
+            product_details: JSON.stringify({
+              name: item.name,
+              price: price,
+              size: item.size || null,
+              color: item.color || null,
+              custom_details: item.details || null
+            })
           };
         });
 
@@ -282,7 +295,7 @@ const Cart = () => {
         // خصم الكمية من المخزن
         for (const item of items) {
           const product = products?.find(p => p.id === item.id);
-          if (product && product.stock > 0) {
+          if (product && product.stock !== null && product.stock !== undefined) {
             const newStock = Math.max(0, product.stock - item.quantity);
             const { error: stockError } = await supabase
               .from("products")
@@ -291,6 +304,7 @@ const Cart = () => {
             
             if (stockError) {
               console.error("Error updating stock:", stockError);
+              toast.error(`فشل تحديث مخزون ${item.name}`);
             }
           }
         }
@@ -715,7 +729,7 @@ const Cart = () => {
                     )}
                     <div className="flex justify-between items-center text-2xl font-bold border-t pt-2">
                       <span>الإجمالي:</span>
-                      <span className="text-primary">{(getTotalPrice() + (customerInfo.isShippingIncluded ? 0 : customerInfo.shippingCost)).toFixed(2)} ج.م</span>
+                      <span className="text-primary">{getTotalPrice().toFixed(2)} ج.م</span>
                     </div>
                   </div>
                 </div>

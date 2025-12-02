@@ -56,6 +56,29 @@ const AllOrders = () => {
     },
   });
 
+  // Helper function to get product name from order item
+  const getProductInfo = (item: any) => {
+    try {
+      if (item.product_details) {
+        const details = JSON.parse(item.product_details);
+        return {
+          name: details.name || item.products?.name || "-",
+          price: details.price || item.price,
+          size: details.size || item.size,
+          color: details.color || item.color
+        };
+      }
+    } catch (e) {
+      // If JSON parse fails, use original values
+    }
+    return {
+      name: item.products?.name || "-",
+      price: item.price,
+      size: item.size,
+      color: item.color
+    };
+  };
+
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
       pending: "bg-yellow-500",
@@ -304,11 +327,16 @@ const AllOrders = () => {
                           <TableCell className="max-w-xs">
                             {order.order_details || (
                               <div className="text-xs space-y-1">
-                                {order.order_items?.map((item: any, idx: number) => (
-                                  <div key={idx}>
-                                    {item.products?.name} × {item.quantity}
-                                  </div>
-                                ))}
+                                {order.order_items?.map((item: any, idx: number) => {
+                                  const productInfo = getProductInfo(item);
+                                  return (
+                                    <div key={idx}>
+                                      {productInfo.name} × {item.quantity}
+                                      {productInfo.size && <span className="text-muted-foreground"> - {productInfo.size}</span>}
+                                      {productInfo.color && <span className="text-muted-foreground"> - {productInfo.color}</span>}
+                                    </div>
+                                  );
+                                })}
                               </div>
                             )}
                           </TableCell>
