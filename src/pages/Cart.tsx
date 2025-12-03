@@ -180,12 +180,19 @@ const Cart = () => {
 
     try {
       if (isReturnOrder && returnOrderId) {
+        // حساب إجمالي المنتجات فقط (بدون الشحن)
+        const itemsTotal = items.reduce((sum, item) => {
+          const price = getProductPrice(item.id, item.quantity);
+          return sum + (price * item.quantity);
+        }, 0);
+        const totalAfterDiscount = itemsTotal - customerInfo.discount;
+
         // Update existing order
         const { error: orderError } = await supabase
           .from("orders")
           .update({
-            total_amount: getTotalPrice(),
-            shipping_cost: customerInfo.shippingCost,
+            total_amount: totalAfterDiscount,
+            shipping_cost: customerInfo.isShippingIncluded ? 0 : customerInfo.shippingCost,
             discount: customerInfo.discount,
             order_details: customerInfo.orderDetails || null,
             notes: customerInfo.notes,
@@ -250,11 +257,18 @@ const Cart = () => {
 
         if (customerError) throw customerError;
 
+        // حساب إجمالي المنتجات فقط (بدون الشحن)
+        const itemsTotal = items.reduce((sum, item) => {
+          const price = getProductPrice(item.id, item.quantity);
+          return sum + (price * item.quantity);
+        }, 0);
+        const totalAfterDiscount = itemsTotal - customerInfo.discount;
+
         const { data: order, error: orderError } = await supabase
           .from("orders")
           .insert({
             customer_id: customer.id,
-            total_amount: getTotalPrice(),
+            total_amount: totalAfterDiscount,
             shipping_cost: customerInfo.isShippingIncluded ? 0 : customerInfo.shippingCost,
             discount: customerInfo.discount,
             order_details: customerInfo.orderDetails || null,
