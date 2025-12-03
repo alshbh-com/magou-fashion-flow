@@ -58,21 +58,33 @@ const AllOrders = () => {
 
   // Helper function to get product name from order item
   const getProductInfo = (item: any) => {
+    // Try to parse product_details JSON first
     try {
       if (item.product_details) {
-        const details = JSON.parse(item.product_details);
+        const details = typeof item.product_details === 'string' 
+          ? JSON.parse(item.product_details) 
+          : item.product_details;
         return {
-          name: details.name || item.products?.name || "-",
+          name: details.name || details.product_name || item.products?.name || "منتج محذوف",
           price: details.price || item.price,
           size: details.size || item.size,
           color: details.color || item.color
         };
       }
     } catch (e) {
-      // If JSON parse fails, use original values
+      // If JSON parse fails, check if it's a plain string
+      if (typeof item.product_details === 'string' && item.product_details.trim()) {
+        return {
+          name: item.product_details,
+          price: item.price,
+          size: item.size,
+          color: item.color
+        };
+      }
     }
+    // Fallback to products relation or show "منتج محذوف"
     return {
-      name: item.products?.name || "-",
+      name: item.products?.name || "منتج محذوف",
       price: item.price,
       size: item.size,
       color: item.color
