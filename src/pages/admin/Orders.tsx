@@ -286,10 +286,22 @@ const Orders = () => {
         "الهاتف": order.customers?.phone,
         "الهاتف الإضافي": (order.customers as any)?.phone2 || "-",
         "العنوان": order.customers?.address,
-        "تفاصيل الأوردر": order.order_details || order.order_items?.map((item: any) => {
-          const productInfo = getProductInfo(item);
-          return `${productInfo.name} × ${item.quantity}`;
-        }).join(", "),
+        "تفاصيل الأوردر": (() => {
+          if (order.order_details) {
+            try {
+              const parsed = JSON.parse(order.order_details);
+              if (Array.isArray(parsed)) {
+                return parsed.map((item: any) => `${item.name} × ${item.quantity}`).join(", ");
+              }
+            } catch (e) {
+              return order.order_details;
+            }
+          }
+          return order.order_items?.map((item: any) => {
+            const productInfo = getProductInfo(item);
+            return `${productInfo.name} × ${item.quantity}`;
+          }).join(", ");
+        })(),
         "الصافي": totalAmount.toFixed(2),
         "الخصم": discount.toFixed(2),
         "الشحن": shippingCost.toFixed(2),
@@ -337,17 +349,39 @@ const Orders = () => {
     const selectedOrdersData = orders?.filter(o => selectedOrders.includes(o.id));
     
     const invoicesHtml = selectedOrdersData?.map(order => {
-      const orderItems = order.order_items?.map((item: any) => {
-        const productInfo = getProductInfo(item);
-        return `
-        <tr>
-          <td style="border: 1px solid #ddd; padding: 8px;">${productInfo.name}</td>
-          <td style="border: 1px solid #ddd; padding: 8px;">${item.quantity}</td>
-          <td style="border: 1px solid #ddd; padding: 8px;">${parseFloat(productInfo.price.toString()).toFixed(2)} ج.م</td>
-          <td style="border: 1px solid #ddd; padding: 8px;">${(parseFloat(productInfo.price.toString()) * item.quantity).toFixed(2)} ج.م</td>
-        </tr>
-      `;
-      }).join('');
+      // Parse order_details if it's JSON array from external store
+      let orderItemsHtml = '';
+      if (order.order_details) {
+        try {
+          const parsed = JSON.parse(order.order_details);
+          if (Array.isArray(parsed)) {
+            orderItemsHtml = parsed.map((item: any) => `
+              <tr>
+                <td style="border: 1px solid #ddd; padding: 8px;">${item.name}</td>
+                <td style="border: 1px solid #ddd; padding: 8px;">${item.quantity}</td>
+                <td style="border: 1px solid #ddd; padding: 8px;">${parseFloat(item.price?.toString() || "0").toFixed(2)} ج.م</td>
+                <td style="border: 1px solid #ddd; padding: 8px;">${(parseFloat(item.price?.toString() || "0") * item.quantity).toFixed(2)} ج.م</td>
+              </tr>
+            `).join('');
+          }
+        } catch (e) {
+          // Not JSON, use order_items
+        }
+      }
+      
+      if (!orderItemsHtml && order.order_items) {
+        orderItemsHtml = order.order_items.map((item: any) => {
+          const productInfo = getProductInfo(item);
+          return `
+            <tr>
+              <td style="border: 1px solid #ddd; padding: 8px;">${productInfo.name}</td>
+              <td style="border: 1px solid #ddd; padding: 8px;">${item.quantity}</td>
+              <td style="border: 1px solid #ddd; padding: 8px;">${parseFloat(productInfo.price.toString()).toFixed(2)} ج.م</td>
+              <td style="border: 1px solid #ddd; padding: 8px;">${(parseFloat(productInfo.price.toString()) * item.quantity).toFixed(2)} ج.م</td>
+            </tr>
+          `;
+        }).join('');
+      }
 
       const totalAmount = parseFloat(order.total_amount?.toString() || "0");
       const discount = parseFloat(order.discount?.toString() || "0");
@@ -377,7 +411,7 @@ const Orders = () => {
               </tr>
             </thead>
             <tbody>
-              ${orderItems}
+              ${orderItemsHtml}
             </tbody>
           </table>
           <div style="margin-top: 20px;">
@@ -653,20 +687,45 @@ const Orders = () => {
                           <TableCell>{(order.customers as any)?.phone2 || "-"}</TableCell>
                           <TableCell className="max-w-xs break-words whitespace-normal">{order.customers?.address}</TableCell>
                           <TableCell className="max-w-xs">
-                            {order.order_details || (
-                              <div className="text-xs space-y-1">
-                                {order.order_items?.map((item: any, idx: number) => {
-                                  const productInfo = getProductInfo(item);
-                                  return (
-                                    <div key={idx}>
-                                      {productInfo.name} × {item.quantity}
-                                      {productInfo.size && <span className="text-muted-foreground"> - {productInfo.size}</span>}
-                                      {productInfo.color && <span className="text-muted-foreground"> - {productInfo.color}</span>}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
+                            {(() => {
+                              // Try to parse order_details as JSON array first
+                              if (order.order_details) {
+                                try {
+                                  const parsed = JSON.parse(order.order_details);
+                                  if (Array.isArray(parsed)) {
+                                    return (
+                                      <div className="text-xs space-y-1">
+                                        {parsed.map((item: any, idx: number) => (
+                                          <div key={idx}>
+                                            {item.name} × {item.quantity}
+                                            {item.size && <span className="text-muted-foreground"> - {item.size}</span>}
+                                            {item.color && <span className="text-muted-foreground"> - {item.color}</span>}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    );
+                                  }
+                                } catch (e) {
+                                  // Not JSON, display as text
+                                  return order.order_details;
+                                }
+                              }
+                              // Fallback to order_items
+                              return (
+                                <div className="text-xs space-y-1">
+                                  {order.order_items?.map((item: any, idx: number) => {
+                                    const productInfo = getProductInfo(item);
+                                    return (
+                                      <div key={idx}>
+                                        {productInfo.name} × {item.quantity}
+                                        {productInfo.size && <span className="text-muted-foreground"> - {productInfo.size}</span>}
+                                        {productInfo.color && <span className="text-muted-foreground"> - {productInfo.color}</span>}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()}
                           </TableCell>
                           <TableCell className="font-bold">
                             {finalAmount.toFixed(2)} ج.م
