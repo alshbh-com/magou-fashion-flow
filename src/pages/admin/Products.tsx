@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Trash2, Plus, ArrowLeft, Edit, Tag, X, Upload } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -28,11 +29,13 @@ const Products = () => {
     stock: "",
     is_offer: false,
     category_id: "",
-    size_options: "",
-    color_options: "",
+    size_options: [] as string[],
+    color_options: [] as string[],
     details: "",
     quantity_pricing: Array.from({ length: 12 }, (_, i) => ({ quantity: i + 1, price: "" }))
   });
+  const [newSize, setNewSize] = useState("");
+  const [newColor, setNewColor] = useState("");
 
   const { data: categories } = useQuery({
     queryKey: ["categories"],
@@ -96,8 +99,8 @@ const Products = () => {
         price: parseFloat(data.price),
         offer_price: data.offer_price ? parseFloat(data.offer_price) : null,
         stock: parseInt(data.stock),
-        size_options: data.size_options ? data.size_options.split(',').map((s: string) => s.trim()) : null,
-        color_options: data.color_options ? data.color_options.split(',').map((c: string) => c.trim()) : null,
+        size_options: data.size_options?.length > 0 ? data.size_options : null,
+        color_options: data.color_options?.length > 0 ? data.color_options : null,
         details: data.details || null,
         quantity_pricing: quantityPricing.length > 0 ? quantityPricing : null
       };
@@ -194,14 +197,16 @@ const Products = () => {
       stock: "",
       is_offer: false,
       category_id: "",
-      size_options: "",
-      color_options: "",
+      size_options: [],
+      color_options: [],
       details: "",
       quantity_pricing: Array.from({ length: 12 }, (_, i) => ({ quantity: i + 1, price: "" }))
     });
     setEditingProduct(null);
     setImageFile(null);
     setAdditionalImages([]);
+    setNewSize("");
+    setNewColor("");
   };
 
   const handleEdit = (product: any) => {
@@ -220,8 +225,8 @@ const Products = () => {
       stock: product.stock.toString(),
       is_offer: product.is_offer,
       category_id: product.category_id || "",
-      size_options: product.size_options?.join(', ') || "",
-      color_options: product.color_options?.join(', ') || "",
+      size_options: product.size_options || [],
+      color_options: product.color_options || [],
       details: product.details || "",
       quantity_pricing: quantityPricingData
     });
@@ -346,23 +351,95 @@ const Products = () => {
                   </div>
                   
                   <div>
-                    <Label htmlFor="size_options">المقاسات المتاحة (مفصولة بفاصلة)</Label>
-                    <Input
-                      id="size_options"
-                      value={formData.size_options}
-                      onChange={(e) => setFormData({...formData, size_options: e.target.value})}
-                      placeholder="S, M, L, XL"
-                    />
+                    <Label>المقاسات المتاحة</Label>
+                    <div className="flex gap-2 mb-2">
+                      <Input
+                        value={newSize}
+                        onChange={(e) => setNewSize(e.target.value)}
+                        placeholder="أدخل مقاس جديد"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (newSize.trim() && !formData.size_options.includes(newSize.trim())) {
+                              setFormData({...formData, size_options: [...formData.size_options, newSize.trim()]});
+                              setNewSize("");
+                            }
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          if (newSize.trim() && !formData.size_options.includes(newSize.trim())) {
+                            setFormData({...formData, size_options: [...formData.size_options, newSize.trim()]});
+                            setNewSize("");
+                          }
+                        }}
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {formData.size_options.map((size, idx) => (
+                        <Badge key={idx} variant="secondary" className="px-3 py-1 text-sm">
+                          {size}
+                          <button
+                            type="button"
+                            onClick={() => setFormData({...formData, size_options: formData.size_options.filter((_, i) => i !== idx)})}
+                            className="mr-2 hover:text-destructive"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
                   </div>
                   
                   <div>
-                    <Label htmlFor="color_options">الألوان المتاحة (مفصولة بفاصلة)</Label>
-                    <Input
-                      id="color_options"
-                      value={formData.color_options}
-                      onChange={(e) => setFormData({...formData, color_options: e.target.value})}
-                      placeholder="أحمر, أزرق, أخضر"
-                    />
+                    <Label>الألوان المتاحة</Label>
+                    <div className="flex gap-2 mb-2">
+                      <Input
+                        value={newColor}
+                        onChange={(e) => setNewColor(e.target.value)}
+                        placeholder="أدخل لون جديد"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (newColor.trim() && !formData.color_options.includes(newColor.trim())) {
+                              setFormData({...formData, color_options: [...formData.color_options, newColor.trim()]});
+                              setNewColor("");
+                            }
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          if (newColor.trim() && !formData.color_options.includes(newColor.trim())) {
+                            setFormData({...formData, color_options: [...formData.color_options, newColor.trim()]});
+                            setNewColor("");
+                          }
+                        }}
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {formData.color_options.map((color, idx) => (
+                        <Badge key={idx} variant="outline" className="px-3 py-1 text-sm">
+                          {color}
+                          <button
+                            type="button"
+                            onClick={() => setFormData({...formData, color_options: formData.color_options.filter((_, i) => i !== idx)})}
+                            className="mr-2 hover:text-destructive"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
                   </div>
                   
                   <div>
