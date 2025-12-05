@@ -688,7 +688,38 @@ const Orders = () => {
                           <TableCell className="max-w-xs break-words whitespace-normal">{order.customers?.address}</TableCell>
                           <TableCell className="max-w-xs">
                             {(() => {
-                              // Try to parse order_details as JSON array first
+                              // Always use order_items as primary source for detailed info
+                              if (order.order_items && order.order_items.length > 0) {
+                                return (
+                                  <div className="text-xs space-y-2">
+                                    {order.order_items.map((item: any, idx: number) => {
+                                      const productInfo = getProductInfo(item);
+                                      const size = item.size || productInfo.size;
+                                      const color = item.color || productInfo.color;
+                                      return (
+                                        <div key={idx} className="bg-muted/50 p-2 rounded">
+                                          <div className="font-medium">{productInfo.name} × {item.quantity}</div>
+                                          {(size || color) && (
+                                            <div className="text-muted-foreground mt-1 flex flex-wrap gap-2">
+                                              {size && (
+                                                <span className="bg-primary/10 px-2 py-0.5 rounded text-primary">
+                                                  مقاس: {size}
+                                                </span>
+                                              )}
+                                              {color && (
+                                                <span className="bg-secondary/50 px-2 py-0.5 rounded">
+                                                  لون: {color}
+                                                </span>
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              }
+                              // Fallback to order_details if no order_items
                               if (order.order_details) {
                                 try {
                                   const parsed = JSON.parse(order.order_details);
@@ -696,35 +727,24 @@ const Orders = () => {
                                     return (
                                       <div className="text-xs space-y-1">
                                         {parsed.map((item: any, idx: number) => (
-                                          <div key={idx}>
-                                            {item.name} × {item.quantity}
-                                            {item.size && <span className="text-muted-foreground"> - {item.size}</span>}
-                                            {item.color && <span className="text-muted-foreground"> - {item.color}</span>}
+                                          <div key={idx} className="bg-muted/50 p-2 rounded">
+                                            <div className="font-medium">{item.name} × {item.quantity}</div>
+                                            {(item.size || item.color) && (
+                                              <div className="text-muted-foreground mt-1 flex flex-wrap gap-2">
+                                                {item.size && <span className="bg-primary/10 px-2 py-0.5 rounded text-primary">مقاس: {item.size}</span>}
+                                                {item.color && <span className="bg-secondary/50 px-2 py-0.5 rounded">لون: {item.color}</span>}
+                                              </div>
+                                            )}
                                           </div>
                                         ))}
                                       </div>
                                     );
                                   }
                                 } catch (e) {
-                                  // Not JSON, display as text
                                   return order.order_details;
                                 }
                               }
-                              // Fallback to order_items
-                              return (
-                                <div className="text-xs space-y-1">
-                                  {order.order_items?.map((item: any, idx: number) => {
-                                    const productInfo = getProductInfo(item);
-                                    return (
-                                      <div key={idx}>
-                                        {productInfo.name} × {item.quantity}
-                                        {productInfo.size && <span className="text-muted-foreground"> - {productInfo.size}</span>}
-                                        {productInfo.color && <span className="text-muted-foreground"> - {productInfo.color}</span>}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              );
+                              return "-";
                             })()}
                           </TableCell>
                           <TableCell className="font-bold">
