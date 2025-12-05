@@ -349,23 +349,25 @@ const Orders = () => {
     const selectedOrdersData = orders?.filter(o => selectedOrders.includes(o.id));
     
     const invoicesHtml = selectedOrdersData?.map(order => {
-      // Parse order_details if it's JSON array from external store
+      // Build items with size and color
       let orderItemsHtml = '';
+      
+      // Try parsing order_details for external store orders
       if (order.order_details) {
         try {
           const parsed = JSON.parse(order.order_details);
           if (Array.isArray(parsed)) {
             orderItemsHtml = parsed.map((item: any) => `
               <tr>
-                <td style="border: 1px solid #ddd; padding: 8px;">${item.name}</td>
-                <td style="border: 1px solid #ddd; padding: 8px;">${item.quantity}</td>
-                <td style="border: 1px solid #ddd; padding: 8px;">${parseFloat(item.price?.toString() || "0").toFixed(2)} ج.م</td>
-                <td style="border: 1px solid #ddd; padding: 8px;">${(parseFloat(item.price?.toString() || "0") * item.quantity).toFixed(2)} ج.م</td>
+                <td style="border: 1px solid #000; padding: 8px; text-align: center;">${item.name || '-'}</td>
+                <td style="border: 1px solid #000; padding: 8px; text-align: center;">${item.size || '-'}</td>
+                <td style="border: 1px solid #000; padding: 8px; text-align: center;">${item.color || '-'}</td>
+                <td style="border: 1px solid #000; padding: 8px; text-align: center;">${parseFloat(item.price?.toString() || "0").toFixed(2)} ج.م</td>
               </tr>
             `).join('');
           }
         } catch (e) {
-          // Not JSON, use order_items
+          // Not JSON
         }
       }
       
@@ -374,50 +376,52 @@ const Orders = () => {
           const productInfo = getProductInfo(item);
           return `
             <tr>
-              <td style="border: 1px solid #ddd; padding: 8px;">${productInfo.name}</td>
-              <td style="border: 1px solid #ddd; padding: 8px;">${item.quantity}</td>
-              <td style="border: 1px solid #ddd; padding: 8px;">${parseFloat(productInfo.price.toString()).toFixed(2)} ج.م</td>
-              <td style="border: 1px solid #ddd; padding: 8px;">${(parseFloat(productInfo.price.toString()) * item.quantity).toFixed(2)} ج.م</td>
+              <td style="border: 1px solid #000; padding: 8px; text-align: center;">${productInfo.name}</td>
+              <td style="border: 1px solid #000; padding: 8px; text-align: center;">${item.size || '-'}</td>
+              <td style="border: 1px solid #000; padding: 8px; text-align: center;">${item.color || '-'}</td>
+              <td style="border: 1px solid #000; padding: 8px; text-align: center;">${parseFloat(productInfo.price.toString()).toFixed(2)} ج.م</td>
             </tr>
           `;
         }).join('');
       }
 
       const totalAmount = parseFloat(order.total_amount?.toString() || "0");
-      const discount = parseFloat(order.discount?.toString() || "0");
       const shippingCost = parseFloat(order.shipping_cost?.toString() || "0");
       const finalAmount = totalAmount + shippingCost;
 
       return `
         <div style="page-break-after: always; padding: 20px;">
-          <h1 style="text-align: center;">${officeName || "فاتورة"}</h1>
-          <div style="margin: 20px 0;">
-            <p><strong>رقم الأوردر:</strong> #${order.order_number || order.id.slice(0, 8)}</p>
-            <p><strong>اسم العميل:</strong> ${order.customers?.name}</p>
-            <p><strong>الهاتف:</strong> ${order.customers?.phone}</p>
-            ${(order.customers as any)?.phone2 ? `<p><strong>هاتف إضافي:</strong> ${(order.customers as any).phone2}</p>` : ''}
-            <p><strong>العنوان:</strong> ${order.customers?.address}</p>
-            <p><strong>المحافظة:</strong> ${order.customers?.governorate || '-'}</p>
-            ${order.order_details ? `<p><strong>تفاصيل الأوردر:</strong> ${order.order_details}</p>` : ''}
-            ${order.notes ? `<p><strong>ملاحظات:</strong> ${order.notes}</p>` : ''}
+          <div style="text-align: center; margin-bottom: 20px;">
+            <h1 style="font-size: 32px; font-weight: bold; color: #d4af37; margin: 0;">Zahra</h1>
           </div>
-          <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+          <h2 style="text-align: center; margin: 10px 0; font-size: 18px;">فاتورة</h2>
+          <hr style="border: 1px solid #ddd;"/>
+          <div style="margin: 15px 0; line-height: 1.8;">
+            <p style="margin: 5px 0;"><strong>رقم الأوردر:</strong> #${order.order_number || order.id.slice(0, 8)}</p>
+            <p style="margin: 5px 0;"><strong>التاريخ:</strong> ${new Date(order.created_at).toLocaleDateString('ar-EG')}</p>
+            <p style="margin: 5px 0;"><strong>اسم العميل:</strong> ${order.customers?.name}</p>
+            <p style="margin: 5px 0;"><strong>الهاتف:</strong> ${order.customers?.phone}</p>
+            ${(order.customers as any)?.phone2 ? `<p style="margin: 5px 0;"><strong>هاتف إضافي:</strong> ${(order.customers as any).phone2}</p>` : ''}
+            <p style="margin: 5px 0;"><strong>المحافظة:</strong> ${order.customers?.governorate || '-'}</p>
+            <p style="margin: 5px 0;"><strong>العنوان:</strong> ${order.customers?.address}</p>
+            ${order.notes ? `<p style="margin: 5px 0;"><strong>ملاحظات:</strong> ${order.notes}</p>` : ''}
+          </div>
+          <hr style="border: 1px solid #ddd;"/>
+          <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">
             <thead>
               <tr>
-                <th style="border: 1px solid #ddd; padding: 12px; background-color: #f2f2f2;">المنتج</th>
-                <th style="border: 1px solid #ddd; padding: 12px; background-color: #f2f2f2;">الكمية</th>
-                <th style="border: 1px solid #ddd; padding: 12px; background-color: #f2f2f2;">السعر</th>
-                <th style="border: 1px solid #ddd; padding: 12px; background-color: #f2f2f2;">الإجمالي</th>
+                <th style="border: 1px solid #000; padding: 10px; background-color: #f8f8f8;">المنتج</th>
+                <th style="border: 1px solid #000; padding: 10px; background-color: #f8f8f8;">المقاس</th>
+                <th style="border: 1px solid #000; padding: 10px; background-color: #f8f8f8;">اللون</th>
+                <th style="border: 1px solid #000; padding: 10px; background-color: #f8f8f8;">السعر</th>
               </tr>
             </thead>
             <tbody>
               ${orderItemsHtml}
             </tbody>
           </table>
-          <div style="margin-top: 20px;">
-            <p style="font-size: 16px;"><strong>الصافي:</strong> ${totalAmount.toFixed(2)} ج.م</p>
-            ${discount > 0 ? `<p style="font-size: 16px;"><strong>الخصم:</strong> ${discount.toFixed(2)} ج.م</p>` : ''}
-            <p style="font-size: 16px;"><strong>الشحن:</strong> ${shippingCost.toFixed(2)} ج.م</p>
+          <hr style="border: 1px solid #ddd; margin-top: 15px;"/>
+          <div style="margin-top: 15px; text-align: left;">
             <p style="font-size: 18px; font-weight: bold;"><strong>الإجمالي:</strong> ${finalAmount.toFixed(2)} ج.م</p>
           </div>
         </div>
