@@ -45,21 +45,48 @@ const AgentPayments = () => {
     },
   });
 
-  // Calculate totals dynamically from orders, returns, and payments
+  // Calculate totals from agent_payments records
   const { data: agentData, isLoading } = useQuery({
     queryKey: ["agent_payments_summary", selectedAgentId],
     queryFn: async () => {
       if (!selectedAgentId) return null;
       
-      // Get all orders for this agent
+      // Get all payments for this agent (owed, payment, settlement, etc.)
+      const { data: allPayments, error: paymentsError } = await supabase
+        .from("agent_payments")
+        .select("*")
+        .eq("delivery_agent_id", selectedAgentId)
+        .order("created_at", { ascending: false });
+      
+      if (paymentsError) throw paymentsError;
+
+      // Calculate totals from payment records
+      const owedPayments = allPayments?.filter(p => p.payment_type === 'owed') || [];
+      const manualPayments = allPayments?.filter(p => p.payment_type === 'payment') || [];
+      const settlements = allPayments?.filter(p => p.payment_type === 'settlement') || [];
+      const deliveredResets = allPayments?.filter(p => p.payment_type === 'delivered_reset') || [];
+
+      // Total owed from orders assigned to agent
+      const totalOwed = owedPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
+      
+      // Total paid by agent
+      const totalPaid = manualPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
+      
+      // Total settlements
+      const totalSettled = settlements.reduce((sum, s) => sum + parseFloat(s.amount.toString()), 0);
+      
+      // Delivered resets
+      const deliveredReset = deliveredResets.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0);
+
+      // Get delivered orders for display
       const { data: orders, error: ordersError } = await supabase
         .from("orders")
         .select("total_amount, shipping_cost, agent_shipping_cost, status")
-        .eq("delivery_agent_id", selectedAgentId);
+        .eq("delivery_agent_id", selectedAgentId)
+        .eq("status", "delivered");
       
       if (ordersError) throw ordersError;
 
-      // Calculate totals
       const calcOrderAmount = (o: any) => {
         const totalAmount = parseFloat(o.total_amount?.toString() || "0");
         const shippingCost = parseFloat(o.shipping_cost?.toString() || "0");
@@ -67,62 +94,20 @@ const AgentPayments = () => {
         return totalAmount + shippingCost - agentShippingCost;
       };
 
-      // Delivered sum
-      const totalDelivered = (orders || []).reduce((sum, order) => {
-        if (order.status === 'delivered') {
-          return sum + calcOrderAmount(order);
-        }
-        return sum;
-      }, 0);
+      const totalDelivered = (orders || []).reduce((sum, order) => sum + calcOrderAmount(order), 0);
 
-      // Open receivables: assigned but not delivered/returned/cancelled
-      const totalOpen = (orders || []).reduce((sum, order) => {
-        if (order.status !== 'delivered' && order.status !== 'returned' && order.status !== 'cancelled') {
-          return sum + calcOrderAmount(order);
-        }
-        return sum;
-      }, 0);
-
-      // Manual advance payments
-      const { data: payments, error: paymentsError } = await supabase
-        .from("agent_payments")
-        .select("*")
-        .eq("delivery_agent_id", selectedAgentId)
-        .eq("payment_type", "payment")
-        .order("created_at", { ascending: false });
-      if (paymentsError) throw paymentsError;
-
-      const totalPaid = payments?.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0) || 0;
-
-      // Settlements to zero receivables
-      const { data: settlements, error: settlementsError } = await supabase
-        .from("agent_payments")
-        .select("amount")
-        .eq("delivery_agent_id", selectedAgentId)
-        .eq("payment_type", "settlement");
-      if (settlementsError) throw settlementsError;
-      const totalSettled = settlements?.reduce((sum, s) => sum + parseFloat(s.amount.toString()), 0) || 0;
-
-      // Delivered resets
-      const { data: deliveredResets, error: deliveredResetsError } = await supabase
-        .from("agent_payments")
-        .select("amount")
-        .eq("delivery_agent_id", selectedAgentId)
-        .eq("payment_type", "delivered_reset");
-      if (deliveredResetsError) throw deliveredResetsError;
-      const deliveredReset = deliveredResets?.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0) || 0;
-
-      const agentReceivables = Math.max(0, totalOpen - totalPaid - totalSettled);
+      // Agent receivables = total owed - payments - settlements
+      const agentReceivables = Math.max(0, totalOwed - totalPaid - totalSettled);
       const totalDeliveredNet = Math.max(0, totalDelivered - deliveredReset);
 
       return {
-        payments,
+        payments: manualPayments,
         totalDelivered,
         totalDeliveredNet,
         totalPaid,
         totalSettled,
         deliveredReset,
-        totalOpen,
+        totalOwed,
         agentReceivables,
       };
     },
