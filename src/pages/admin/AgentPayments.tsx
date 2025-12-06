@@ -51,7 +51,7 @@ const AgentPayments = () => {
     queryFn: async () => {
       if (!selectedAgentId) return null;
       
-      // Get all payments for this agent (owed, payment, settlement, etc.)
+      // Get all payments for this agent
       const { data: allPayments, error: paymentsError } = await supabase
         .from("agent_payments")
         .select("*")
@@ -60,44 +60,29 @@ const AgentPayments = () => {
       
       if (paymentsError) throw paymentsError;
 
-      // Calculate totals from payment records
+      // Categorize payments
       const owedPayments = allPayments?.filter(p => p.payment_type === 'owed') || [];
       const manualPayments = allPayments?.filter(p => p.payment_type === 'payment') || [];
-      const settlements = allPayments?.filter(p => p.payment_type === 'settlement') || [];
+      const deliveredPayments = allPayments?.filter(p => p.payment_type === 'delivered') || [];
       const deliveredResets = allPayments?.filter(p => p.payment_type === 'delivered_reset') || [];
 
       // Total owed from orders assigned to agent
       const totalOwed = owedPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
       
-      // Total paid by agent
+      // Total paid by agent (manual payments)
       const totalPaid = manualPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
       
-      // Total settlements
-      const totalSettled = settlements.reduce((sum, s) => sum + parseFloat(s.amount.toString()), 0);
+      // Total delivered (from delivered payments records)
+      const totalDelivered = deliveredPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
       
       // Delivered resets
       const deliveredReset = deliveredResets.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0);
 
-      // Get delivered orders for display
-      const { data: orders, error: ordersError } = await supabase
-        .from("orders")
-        .select("total_amount, shipping_cost, agent_shipping_cost, status")
-        .eq("delivery_agent_id", selectedAgentId)
-        .eq("status", "delivered");
+      // المستحقات = إجمالي المعين - الطلبات المسلمة - المدفوعات
+      // Receivables = Total owed - Delivered - Payments
+      const agentReceivables = Math.max(0, totalOwed - totalDelivered - totalPaid);
       
-      if (ordersError) throw ordersError;
-
-      const calcOrderAmount = (o: any) => {
-        const totalAmount = parseFloat(o.total_amount?.toString() || "0");
-        const shippingCost = parseFloat(o.shipping_cost?.toString() || "0");
-        const agentShippingCost = parseFloat(o.agent_shipping_cost?.toString() || "0");
-        return totalAmount + shippingCost - agentShippingCost;
-      };
-
-      const totalDelivered = (orders || []).reduce((sum, order) => sum + calcOrderAmount(order), 0);
-
-      // Agent receivables = total owed - payments - settlements
-      const agentReceivables = Math.max(0, totalOwed - totalPaid - totalSettled);
+      // Net delivered for display
       const totalDeliveredNet = Math.max(0, totalDelivered - deliveredReset);
 
       return {
@@ -105,7 +90,6 @@ const AgentPayments = () => {
         totalDelivered,
         totalDeliveredNet,
         totalPaid,
-        totalSettled,
         deliveredReset,
         totalOwed,
         agentReceivables,
@@ -182,21 +166,7 @@ const AgentPayments = () => {
         .in("status", ["pending", "shipped"]);
       if (ordersError) throw ordersError;
 
-      // 2) Insert a settlement to zero out receivables
-      const settleAmount = agentData?.agentReceivables || 0;
-      if (settleAmount > 0) {
-        const { error: insertError } = await supabase
-          .from("agent_payments")
-          .insert({
-            delivery_agent_id: selectedAgentId,
-            amount: settleAmount,
-            payment_type: "settlement",
-            notes: "تقفيل - تسوية المستحقات"
-          });
-        if (insertError) throw insertError;
-      }
-
-      // 3) Delete all manual advance payments so advance shows 0
+      // 2) Delete all manual advance payments so advance shows 0
       const { error: deleteError } = await supabase
         .from("agent_payments")
         .delete()
