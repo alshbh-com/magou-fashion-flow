@@ -19,7 +19,7 @@ const Invoices = () => {
         .from("orders")
         .select(`
           *,
-          customers (name, phone, address, governorate),
+          customers (name, phone, address, governorate, phone2),
           delivery_agents (name, serial_number),
           order_items (*, products (name))
         `)
@@ -36,8 +36,8 @@ const Invoices = () => {
       const totalAmount = parseFloat(order.total_amount.toString());
       const customerShipping = parseFloat((order.shipping_cost || 0).toString());
       const agentShipping = parseFloat((order.agent_shipping_cost || 0).toString());
-      const totalPrice = totalAmount + customerShipping; // الإجمالي
-      const netAmount = totalPrice - agentShipping; // الصافي
+      const totalPrice = totalAmount + customerShipping;
+      const netAmount = totalPrice - agentShipping;
       
       return {
         "رقم الأوردر": order.order_number || order.id.slice(0, 8),
@@ -75,16 +75,19 @@ const Invoices = () => {
       const customerShipping = parseFloat((order.shipping_cost || 0).toString());
       const totalPrice = totalAmount + customerShipping;
       
-      // Get items with size and color
+      // Get items with size, color and quantity
       const itemsHtml = order.order_items?.map((item: any) => {
         const size = item.size || '-';
         const color = item.color || '-';
+        const quantity = item.quantity || 1;
+        const itemTotal = parseFloat(item.price.toString()) * quantity;
         return `
           <tr>
             <td style="border: 1px solid #000; padding: 8px; text-align: center;">${item.products?.name || '-'}</td>
+            <td style="border: 1px solid #000; padding: 8px; text-align: center;">${quantity}</td>
             <td style="border: 1px solid #000; padding: 8px; text-align: center;">${size}</td>
             <td style="border: 1px solid #000; padding: 8px; text-align: center;">${color}</td>
-            <td style="border: 1px solid #000; padding: 8px; text-align: center;">${parseFloat(item.price.toString()).toFixed(2)} ج.م</td>
+            <td style="border: 1px solid #000; padding: 8px; text-align: center;">${itemTotal.toFixed(2)} ج.م</td>
           </tr>
         `;
       }).join('') || '';
@@ -101,7 +104,7 @@ const Invoices = () => {
           <p style="margin: 5px 0;"><strong>التاريخ:</strong> ${new Date(order.created_at).toLocaleDateString('ar-EG')}</p>
           <p style="margin: 5px 0;"><strong>العميل:</strong> ${order.customers?.name}</p>
           <p style="margin: 5px 0;"><strong>الهاتف:</strong> ${order.customers?.phone}</p>
-          ${(order.customers as any)?.phone2 ? `<p style="margin: 5px 0;"><strong>الهاتف 2:</strong> ${(order.customers as any).phone2}</p>` : ''}
+          ${order.customers?.phone2 ? `<p style="margin: 5px 0;"><strong>الهاتف 2:</strong> ${order.customers.phone2}</p>` : ''}
           <p style="margin: 5px 0;"><strong>المحافظة:</strong> ${order.customers?.governorate || "-"}</p>
           <p style="margin: 5px 0;"><strong>العنوان:</strong> ${order.customers?.address}</p>
           ${order.notes ? `<p style="margin: 5px 0;"><strong>ملاحظات:</strong> ${order.notes}</p>` : ''}
@@ -110,6 +113,7 @@ const Invoices = () => {
         <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">
           <tr>
             <th style="border: 1px solid #000; padding: 10px; background-color: #f8f8f8;">المنتج</th>
+            <th style="border: 1px solid #000; padding: 10px; background-color: #f8f8f8;">الكمية</th>
             <th style="border: 1px solid #000; padding: 10px; background-color: #f8f8f8;">المقاس</th>
             <th style="border: 1px solid #000; padding: 10px; background-color: #f8f8f8;">اللون</th>
             <th style="border: 1px solid #000; padding: 10px; background-color: #f8f8f8;">السعر</th>
@@ -118,10 +122,13 @@ const Invoices = () => {
         </table>
         <hr style="border: 1px solid #ddd; margin-top: 15px;"/>
         <div style="margin-top: 15px; text-align: left;">
-          <p style="font-size: 18px; font-weight: bold;"><strong>الإجمالي:</strong> ${totalPrice.toFixed(2)} ج.م</p>
+          <p style="margin: 10px 0;"><strong>سعر المنتجات:</strong> ${totalAmount.toFixed(2)} ج.م</p>
+          <p style="margin: 10px 0;"><strong>سعر الشحن:</strong> ${customerShipping.toFixed(2)} ج.م</p>
+          <p style="font-size: 18px; font-weight: bold; margin-top: 15px; border-top: 2px solid #000; padding-top: 10px;"><strong>الإجمالي:</strong> ${totalPrice.toFixed(2)} ج.م</p>
         </div>
       </div>
-    `;}).join('');
+    `;
+    }).join('');
 
     printWindow.document.write(`
       <html dir="rtl">
@@ -167,8 +174,8 @@ const Invoices = () => {
                 const totalAmount = parseFloat(order.total_amount.toString());
                 const customerShipping = parseFloat((order.shipping_cost || 0).toString());
                 const agentShipping = parseFloat((order.agent_shipping_cost || 0).toString());
-                const totalPrice = totalAmount + customerShipping; // الإجمالي
-                const netAmount = totalPrice - agentShipping; // الصافي
+                const totalPrice = totalAmount + customerShipping;
+                const netAmount = totalPrice - agentShipping;
                 
                 return (
                   <div key={order.id} className="flex items-center gap-4 p-4 border rounded">
