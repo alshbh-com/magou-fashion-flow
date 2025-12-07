@@ -121,57 +121,11 @@ const AllOrders = () => {
   };
 
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ orderId, newStatus, oldStatus, order }: { 
+    mutationFn: async ({ orderId, newStatus }: { 
       orderId: string; 
       newStatus: string; 
-      oldStatus: string;
-      order: any;
     }) => {
-      // If changing from delivered/returned back to shipped, update agent totals
-      if ((oldStatus === 'delivered' || oldStatus === 'returned' || oldStatus === 'partially_returned') && newStatus === 'shipped') {
-        if (order.delivery_agent_id) {
-          const owedAmount = parseFloat(order.total_amount?.toString() || "0") + 
-                            parseFloat(order.shipping_cost?.toString() || "0") - 
-                            parseFloat(order.agent_shipping_cost?.toString() || "0");
-          
-          // Get current total_owed
-          const { data: agentData, error: fetchError } = await supabase
-            .from("delivery_agents")
-            .select("total_owed")
-            .eq("id", order.delivery_agent_id)
-            .single();
-          
-          if (fetchError) throw fetchError;
-          
-          const currentOwed = parseFloat(agentData.total_owed?.toString() || "0");
-          const newOwed = currentOwed + owedAmount;
-          
-          // Add back to agent's total_owed
-          const { error: agentError } = await supabase
-            .from("delivery_agents")
-            .update({ 
-              total_owed: newOwed
-            })
-            .eq("id", order.delivery_agent_id);
-          
-          if (agentError) throw agentError;
-
-          // Create a new payment record
-          const { error: paymentError } = await supabase
-            .from("agent_payments")
-            .insert({
-              delivery_agent_id: order.delivery_agent_id,
-              order_id: orderId,
-              amount: owedAmount,
-              payment_type: 'owed',
-              notes: `إعادة تعيين طلب رقم ${order.order_number} من ${getStatusText(oldStatus)} إلى تم الشحن`
-            });
-          
-          if (paymentError) throw paymentError;
-        }
-      }
-
-      // Update order status
+      // Database trigger handles all agent payment logic automatically
       const { error } = await supabase
         .from("orders")
         .update({ status: newStatus as any })
@@ -483,9 +437,7 @@ const AllOrders = () => {
                                     if (editingStatus) {
                                       updateStatusMutation.mutate({
                                         orderId: order.id,
-                                        newStatus: editingStatus.currentStatus,
-                                        oldStatus: order.status,
-                                        order: order
+                                        newStatus: editingStatus.currentStatus
                                       });
                                     }
                                   }}>
