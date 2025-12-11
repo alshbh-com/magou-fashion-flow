@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, UserCheck, Printer, Download, Barcode } from "lucide-react";
+import { ArrowLeft, UserCheck, Printer, Download, Barcode, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -32,6 +32,16 @@ const Orders = () => {
   const [barcodeOrders, setBarcodeOrders] = useState<string[]>([""]);
   const [officeName, setOfficeName] = useState<string>("");
   const [editingNotes, setEditingNotes] = useState<{ [key: string]: string }>({});
+  const [manualOrderDialogOpen, setManualOrderDialogOpen] = useState(false);
+  const [manualOrder, setManualOrder] = useState({
+    customerName: "",
+    phone: "",
+    address: "",
+    productName: "",
+    productPrice: "",
+    shippingCost: "",
+    governorateId: ""
+  });
 
   const { data: orders, isLoading } = useQuery({
     queryKey: ["orders"],
@@ -214,6 +224,80 @@ const Orders = () => {
       queryClient.invalidateQueries({ queryKey: ["all-orders"] });
       toast.success("تم حذف الأوردر بنجاح");
     },
+  });
+
+  const createManualOrderMutation = useMutation({
+    mutationFn: async () => {
+      // First create or find customer
+      const selectedGov = governorates?.find(g => g.id === manualOrder.governorateId);
+      
+      const { data: customer, error: customerError } = await supabase
+        .from("customers")
+        .insert({
+          name: manualOrder.customerName,
+          phone: manualOrder.phone,
+          address: manualOrder.address,
+          governorate: selectedGov?.name || null
+        })
+        .select()
+        .single();
+      
+      if (customerError) throw customerError;
+
+      const productPrice = parseFloat(manualOrder.productPrice) || 0;
+      const shippingCost = parseFloat(manualOrder.shippingCost) || selectedGov?.shipping_cost || 0;
+
+      // Create order
+      const { data: order, error: orderError } = await supabase
+        .from("orders")
+        .insert({
+          customer_id: customer.id,
+          total_amount: productPrice,
+          shipping_cost: shippingCost,
+          governorate_id: manualOrder.governorateId || null,
+          status: 'pending',
+          order_details: manualOrder.productName ? JSON.stringify([{ name: manualOrder.productName, quantity: 1, price: productPrice }]) : null
+        })
+        .select()
+        .single();
+      
+      if (orderError) throw orderError;
+
+      // If product name provided, create order item
+      if (manualOrder.productName) {
+        const { error: itemError } = await supabase
+          .from("order_items")
+          .insert({
+            order_id: order.id,
+            quantity: 1,
+            price: productPrice,
+            product_details: JSON.stringify({ name: manualOrder.productName, price: productPrice })
+          });
+        
+        if (itemError) throw itemError;
+      }
+
+      return order;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
+      queryClient.invalidateQueries({ queryKey: ["all-orders"] });
+      toast.success("تم إنشاء الأوردر بنجاح");
+      setManualOrderDialogOpen(false);
+      setManualOrder({
+        customerName: "",
+        phone: "",
+        address: "",
+        productName: "",
+        productPrice: "",
+        shippingCost: "",
+        governorateId: ""
+      });
+    },
+    onError: (error) => {
+      toast.error("حدث خطأ أثناء إنشاء الأوردر");
+      console.error(error);
+    }
   });
 
   const toggleOrderSelection = (orderId: string) => {
@@ -519,7 +603,13 @@ const Orders = () => {
           <CardHeader>
             <div className="flex flex-col gap-4">
               <div className="flex items-center justify-between">
-                <CardTitle>الأوردرات</CardTitle>
+                <div className="flex items-center gap-3">
+                  <CardTitle>الأوردرات</CardTitle>
+                  <Button onClick={() => setManualOrderDialogOpen(true)} size="sm" variant="outline">
+                    <Plus className="ml-2 h-4 w-4" />
+                    إضافة يدوي
+                  </Button>
+                </div>
                 {selectedOrders.length > 0 && (
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-muted-foreground">
@@ -884,6 +974,106 @@ const Orders = () => {
               </div>
               <Button onClick={handleBarcodeAssign} className="w-full">
                 تعيين الأوردرات
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={manualOrderDialogOpen} onOpenChange={setManualOrderDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>إضافة أوردر يدوي</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label>الاسم *</Label>
+                <Input
+                  value={manualOrder.customerName}
+                  onChange={(e) => setManualOrder({ ...manualOrder, customerName: e.target.value })}
+                  placeholder="اسم العميل"
+                />
+              </div>
+              <div>
+                <Label>رقم الهاتف *</Label>
+                <Input
+                  value={manualOrder.phone}
+                  onChange={(e) => setManualOrder({ ...manualOrder, phone: e.target.value })}
+                  placeholder="رقم الهاتف"
+                />
+              </div>
+              <div>
+                <Label>العنوان *</Label>
+                <Input
+                  value={manualOrder.address}
+                  onChange={(e) => setManualOrder({ ...manualOrder, address: e.target.value })}
+                  placeholder="العنوان"
+                />
+              </div>
+              <div>
+                <Label>المحافظة</Label>
+                <Select 
+                  value={manualOrder.governorateId} 
+                  onValueChange={(value) => {
+                    const selectedGov = governorates?.find(g => g.id === value);
+                    setManualOrder({ 
+                      ...manualOrder, 
+                      governorateId: value,
+                      shippingCost: selectedGov?.shipping_cost?.toString() || manualOrder.shippingCost
+                    });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="اختر المحافظة" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {governorates?.map((gov) => (
+                      <SelectItem key={gov.id} value={gov.id}>
+                        {gov.name} - {gov.shipping_cost} ج.م
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>اسم المنتج (اختياري)</Label>
+                <Input
+                  value={manualOrder.productName}
+                  onChange={(e) => setManualOrder({ ...manualOrder, productName: e.target.value })}
+                  placeholder="اسم المنتج"
+                />
+              </div>
+              <div>
+                <Label>سعر المنتج *</Label>
+                <Input
+                  type="number"
+                  value={manualOrder.productPrice}
+                  onChange={(e) => setManualOrder({ ...manualOrder, productPrice: e.target.value })}
+                  placeholder="سعر المنتج"
+                  min="0"
+                />
+              </div>
+              <div>
+                <Label>سعر الشحن (اختياري)</Label>
+                <Input
+                  type="number"
+                  value={manualOrder.shippingCost}
+                  onChange={(e) => setManualOrder({ ...manualOrder, shippingCost: e.target.value })}
+                  placeholder="سعر الشحن"
+                  min="0"
+                />
+              </div>
+              <Button 
+                onClick={() => {
+                  if (!manualOrder.customerName || !manualOrder.phone || !manualOrder.address || !manualOrder.productPrice) {
+                    toast.error("يرجى ملء جميع الحقول المطلوبة");
+                    return;
+                  }
+                  createManualOrderMutation.mutate();
+                }}
+                className="w-full"
+                disabled={createManualOrderMutation.isPending}
+              >
+                {createManualOrderMutation.isPending ? "جاري الإنشاء..." : "إنشاء الأوردر"}
               </Button>
             </div>
           </DialogContent>
