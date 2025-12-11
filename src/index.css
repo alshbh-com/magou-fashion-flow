@@ -101,7 +101,7 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
-    background-image: linear-gradient(180deg, hsl(var(--background) / 0.5), hsl(var(--background) / 0.7)), url('/images/magou-bg.jpg');
+    background-image: linear-gradient(180deg, hsl(var(--background) / 0.5), hsl(var(--background) / 0.7)), url('/images/zahra-bg.jpg');
     background-size: cover;
     background-position: center;
     background-attachment: fixed;
