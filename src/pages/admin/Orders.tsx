@@ -254,7 +254,7 @@ const Orders = () => {
           customer_id: customer.id,
           total_amount: productPrice,
           shipping_cost: shippingCost,
-          governorate_id: manualOrder.governorateId || null,
+          governorate_id: manualOrder.governorateId && manualOrder.governorateId.trim() !== "" ? manualOrder.governorateId : null,
           status: 'pending',
           order_details: manualOrder.productName ? JSON.stringify([{ name: manualOrder.productName, quantity: 1, price: productPrice }]) : null
         })
@@ -294,9 +294,9 @@ const Orders = () => {
         governorateId: ""
       });
     },
-    onError: (error) => {
-      toast.error("حدث خطأ أثناء إنشاء الأوردر");
-      console.error(error);
+    onError: (error: any) => {
+      console.error("Error creating order:", error);
+      toast.error(`حدث خطأ: ${error?.message || "خطأ غير معروف"}`);
     }
   });
 
