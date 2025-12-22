@@ -381,6 +381,47 @@ export type Database = {
           },
         ]
       }
+      product_color_variants: {
+        Row: {
+          color: string
+          created_at: string | null
+          id: string
+          product_id: string
+          size_prices: Json | null
+          sizes: string[] | null
+          stock: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          color: string
+          created_at?: string | null
+          id?: string
+          product_id: string
+          size_prices?: Json | null
+          sizes?: string[] | null
+          stock?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          color?: string
+          created_at?: string | null
+          id?: string
+          product_id?: string
+          size_prices?: Json | null
+          sizes?: string[] | null
+          stock?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_color_variants_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       product_images: {
         Row: {
           created_at: string | null
