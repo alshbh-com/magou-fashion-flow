@@ -13,12 +13,15 @@ import { Trash2, Plus, ArrowLeft, Pencil } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import PaymentPasswordDialog from "@/components/admin/PaymentPasswordDialog";
 
 const AgentPayments = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [pendingPayment, setPendingPayment] = useState<{ amount: string; notes: string } | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [editingPayment, setEditingPayment] = useState<any>(null);
   
@@ -253,7 +256,17 @@ const AgentPayments = () => {
       toast.error("يرجى ملء جميع الحقول");
       return;
     }
-    createMutation.mutate({ amount: formData.amount, notes: formData.notes });
+    // Store pending payment and open password dialog
+    setPendingPayment({ amount: formData.amount, notes: formData.notes });
+    setOpen(false);
+    setPasswordDialogOpen(true);
+  };
+
+  const handlePasswordSuccess = () => {
+    if (pendingPayment) {
+      createMutation.mutate(pendingPayment);
+      setPendingPayment(null);
+    }
   };
 
   const handleEditSubmit = (e: React.FormEvent) => {
