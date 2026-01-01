@@ -14,6 +14,100 @@ export type Database = {
   }
   public: {
     Tables: {
+      activity_logs: {
+        Row: {
+          action: string
+          created_at: string | null
+          details: Json | null
+          id: string
+          section: string
+          user_id: string | null
+          username: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string | null
+          details?: Json | null
+          id?: string
+          section: string
+          user_id?: string | null
+          username?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string | null
+          details?: Json | null
+          id?: string
+          section?: string
+          user_id?: string | null
+          username?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "activity_logs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "admin_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      admin_user_permissions: {
+        Row: {
+          created_at: string | null
+          id: string
+          permission: Database["public"]["Enums"]["admin_permission"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          permission: Database["public"]["Enums"]["admin_permission"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          permission?: Database["public"]["Enums"]["admin_permission"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "admin_user_permissions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "admin_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      admin_users: {
+        Row: {
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          password: string
+          updated_at: string | null
+          username: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          password: string
+          updated_at?: string | null
+          username: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          password?: string
+          updated_at?: string | null
+          username?: string
+        }
+        Relationships: []
+      }
       agent_payments: {
         Row: {
           amount: number
@@ -646,6 +740,30 @@ export type Database = {
         }
         Relationships: []
       }
+      system_passwords: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          password: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id: string
+          password: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          password?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -654,6 +772,21 @@ export type Database = {
       reset_order_sequence: { Args: never; Returns: undefined }
     }
     Enums: {
+      admin_permission:
+        | "orders"
+        | "products"
+        | "categories"
+        | "customers"
+        | "agents"
+        | "agent_orders"
+        | "agent_payments"
+        | "governorates"
+        | "statistics"
+        | "invoices"
+        | "all_orders"
+        | "settings"
+        | "reset_data"
+        | "user_management"
       order_status:
         | "pending"
         | "processing"
@@ -792,6 +925,22 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      admin_permission: [
+        "orders",
+        "products",
+        "categories",
+        "customers",
+        "agents",
+        "agent_orders",
+        "agent_payments",
+        "governorates",
+        "statistics",
+        "invoices",
+        "all_orders",
+        "settings",
+        "reset_data",
+        "user_management",
+      ],
       order_status: [
         "pending",
         "processing",

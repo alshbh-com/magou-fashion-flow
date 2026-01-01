@@ -21,6 +21,7 @@ const Invoices = () => {
           *,
           customers (name, phone, address, governorate, phone2),
           delivery_agents (name, serial_number),
+          governorates (name, shipping_cost),
           order_items (*, products (name))
         `)
         .order("created_at", { ascending: false });
@@ -105,7 +106,8 @@ const Invoices = () => {
           <p style="margin: 5px 0;"><strong>العميل:</strong> ${order.customers?.name}</p>
           <p style="margin: 5px 0;"><strong>الهاتف:</strong> ${order.customers?.phone}</p>
           ${order.customers?.phone2 ? `<p style="margin: 5px 0;"><strong>الهاتف 2:</strong> ${order.customers.phone2}</p>` : ''}
-          <p style="margin: 5px 0;"><strong>المحافظة:</strong> ${order.customers?.governorate || "-"}</p>
+          <p style="margin: 5px 0;"><strong>المحافظة:</strong> ${order.governorates?.name || order.customers?.governorate || "-"}</p>
+          <p style="margin: 5px 0;"><strong>سعر شحن المحافظة:</strong> ${order.governorates?.shipping_cost || order.shipping_cost || 0} ج.م</p>
           <p style="margin: 5px 0;"><strong>العنوان:</strong> ${order.customers?.address}</p>
           ${order.notes ? `<p style="margin: 5px 0;"><strong>ملاحظات:</strong> ${order.notes}</p>` : ''}
         </div>

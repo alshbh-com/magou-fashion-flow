@@ -1,6 +1,5 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { isAdminAuthenticated } from "@/lib/adminAuth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
   Users, 
@@ -12,111 +11,48 @@ import {
   BarChart, 
   Settings,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  UserCog,
+  Activity,
+  LogOut
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import SearchBar from "@/components/admin/SearchBar";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
+import MasterLock from "@/components/admin/MasterLock";
 
 const adminSections = [
-  {
-    title: "العملاء",
-    description: "إدارة بيانات العملاء",
-    icon: Users,
-    path: "/admin/customers",
-    color: "text-blue-500"
-  },
-  {
-    title: "بيانات المندوبين",
-    description: "إدارة المندوبين",
-    icon: Truck,
-    path: "/admin/agents",
-    color: "text-green-500"
-  },
-  {
-    title: "الأوردرات",
-    description: "إدارة الطلبات",
-    icon: ShoppingCart,
-    path: "/admin/orders",
-    color: "text-orange-500"
-  },
-  {
-    title: "أوردرات المندوب",
-    description: "طلبات كل مندوب",
-    icon: Package,
-    path: "/admin/agent-orders",
-    color: "text-purple-500"
-  },
-  {
-    title: "دفعات المندوب",
-    description: "المدفوعات والمستحقات",
-    icon: DollarSign,
-    path: "/admin/agent-payments",
-    color: "text-yellow-500"
-  },
-  {
-    title: "المنتجات",
-    description: "إدارة المنتجات والعروض",
-    icon: Settings,
-    path: "/admin/products",
-    color: "text-red-500"
-  },
-  {
-    title: "الأقسام",
-    description: "إدارة أقسام المنتجات",
-    icon: Settings,
-    path: "/admin/categories",
-    color: "text-indigo-500"
-  },
-  {
-    title: "الإحصائيات",
-    description: "إحصائيات المبيعات",
-    icon: BarChart,
-    path: "/admin/statistics",
-    color: "text-cyan-500"
-  },
-  {
-    title: "الفواتير",
-    description: "طباعة الفواتير",
-    icon: FileText,
-    path: "/admin/invoices",
-    color: "text-pink-500"
-  },
-  {
-    title: "المحافظات",
-    description: "إدارة المحافظات وأسعار الشحن",
-    icon: Settings,
-    path: "/admin/governorates",
-    color: "text-teal-500"
-  },
-  {
-    title: "جميع الأوردرات",
-    description: "عرض جميع الأوردرات",
-    icon: ShoppingCart,
-    path: "/admin/all-orders",
-    color: "text-violet-500"
-  },
-  {
-    title: "إعادة تعيين البيانات",
-    description: "مسح جميع البيانات والبدء من جديد",
-    icon: Trash2,
-    path: "/admin/reset-data",
-    color: "text-red-600"
-  }
+  { title: "العملاء", description: "إدارة بيانات العملاء", icon: Users, path: "/admin/customers", color: "text-blue-500", permission: "customers" },
+  { title: "بيانات المندوبين", description: "إدارة المندوبين", icon: Truck, path: "/admin/agents", color: "text-green-500", permission: "agents" },
+  { title: "الأوردرات", description: "إدارة الطلبات", icon: ShoppingCart, path: "/admin/orders", color: "text-orange-500", permission: "orders" },
+  { title: "أوردرات المندوب", description: "طلبات كل مندوب", icon: Package, path: "/admin/agent-orders", color: "text-purple-500", permission: "agent_orders" },
+  { title: "دفعات المندوب", description: "المدفوعات والمستحقات", icon: DollarSign, path: "/admin/agent-payments", color: "text-yellow-500", permission: "agent_payments" },
+  { title: "المنتجات", description: "إدارة المنتجات والعروض", icon: Settings, path: "/admin/products", color: "text-red-500", permission: "products" },
+  { title: "الأقسام", description: "إدارة أقسام المنتجات", icon: Settings, path: "/admin/categories", color: "text-indigo-500", permission: "categories" },
+  { title: "الإحصائيات", description: "إحصائيات المبيعات", icon: BarChart, path: "/admin/statistics", color: "text-cyan-500", permission: "statistics" },
+  { title: "الفواتير", description: "طباعة الفواتير", icon: FileText, path: "/admin/invoices", color: "text-pink-500", permission: "invoices" },
+  { title: "المحافظات", description: "إدارة المحافظات وأسعار الشحن", icon: Settings, path: "/admin/governorates", color: "text-teal-500", permission: "governorates" },
+  { title: "جميع الأوردرات", description: "عرض جميع الأوردرات", icon: ShoppingCart, path: "/admin/all-orders", color: "text-violet-500", permission: "all_orders" },
+  { title: "إعادة تعيين البيانات", description: "مسح جميع البيانات والبدء من جديد", icon: Trash2, path: "/admin/reset-data", color: "text-red-600", permission: "reset_data" },
+  { title: "إدارة المستخدمين", description: "إنشاء وإدارة المستخدمين والصلاحيات", icon: UserCog, path: "/admin/users", color: "text-amber-500", permission: "user_management" },
+  { title: "سجل النشاط", description: "عرض سجل جميع العمليات", icon: Activity, path: "/admin/activity", color: "text-slate-500", permission: "user_management" },
 ];
 
 const LOW_STOCK_THRESHOLD = 10;
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { isLocked, currentUser, hasPermission, logout, logActivity } = useAdminAuth();
 
   useEffect(() => {
-    if (!isAdminAuthenticated()) {
-      navigate("/settings");
+    if (!isLocked) {
+      logActivity('دخول لوحة التحكم', 'dashboard');
     }
-  }, [navigate]);
+  }, [isLocked]);
 
   const { data: lowStockProducts, isLoading: isLoadingLowStock } = useQuery({
     queryKey: ["lowStockProducts"],
@@ -129,14 +65,37 @@ const Dashboard = () => {
       
       if (error) throw error;
       return data;
-    }
+    },
+    enabled: !isLocked
   });
+
+  // Show lock screen if locked
+  if (isLocked) {
+    return <MasterLock />;
+  }
+
+  const visibleSections = adminSections.filter(section => hasPermission(section.permission));
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-accent/20 py-8">
       <div className="container mx-auto px-4">
-        <h1 className="text-4xl font-bold mb-2">لوحة التحكم</h1>
-        <p className="text-muted-foreground mb-8">إدارة متجر Magou Fashion</p>
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <h1 className="text-4xl font-bold">لوحة التحكم</h1>
+            <p className="text-muted-foreground">إدارة متجر Zahra</p>
+          </div>
+          {currentUser && (
+            <div className="flex items-center gap-4">
+              <span className="text-sm text-muted-foreground">
+                مرحباً، {currentUser.username}
+              </span>
+              <Button variant="outline" size="sm" onClick={logout}>
+                <LogOut className="ml-2 h-4 w-4" />
+                تسجيل خروج
+              </Button>
+            </div>
+          )}
+        </div>
 
         <div className="mb-8">
           <SearchBar />
@@ -188,7 +147,7 @@ const Dashboard = () => {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {adminSections.map((section) => (
+          {visibleSections.map((section) => (
             <Link key={section.path} to={section.path}>
               <Card className="hover:shadow-xl transition-all duration-300 cursor-pointer group">
                 <CardHeader>
