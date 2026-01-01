@@ -24,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import MasterLock from "@/components/admin/MasterLock";
+import UserLogin from "@/components/admin/UserLogin";
 
 const adminSections = [
   { title: "العملاء", description: "إدارة بيانات العملاء", icon: Users, path: "/admin/customers", color: "text-blue-500", permission: "customers" },
@@ -46,13 +47,13 @@ const LOW_STOCK_THRESHOLD = 10;
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const { isLocked, currentUser, hasPermission, logout, logActivity } = useAdminAuth();
+  const { isLocked, currentUser, canView, logout, logActivity } = useAdminAuth();
 
   useEffect(() => {
-    if (!isLocked) {
+    if (!isLocked && currentUser) {
       logActivity('دخول لوحة التحكم', 'dashboard');
     }
-  }, [isLocked]);
+  }, [isLocked, currentUser]);
 
   const { data: lowStockProducts, isLoading: isLoadingLowStock } = useQuery({
     queryKey: ["lowStockProducts"],
@@ -66,7 +67,7 @@ const Dashboard = () => {
       if (error) throw error;
       return data;
     },
-    enabled: !isLocked
+    enabled: !isLocked && !!currentUser
   });
 
   // Show lock screen if locked
@@ -74,7 +75,13 @@ const Dashboard = () => {
     return <MasterLock />;
   }
 
-  const visibleSections = adminSections.filter(section => hasPermission(section.permission));
+  // Show login screen if no user
+  if (!currentUser) {
+    return <UserLogin />;
+  }
+
+  // Filter sections based on view permission
+  const visibleSections = adminSections.filter(section => canView(section.permission));
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-accent/20 py-8">
@@ -84,24 +91,22 @@ const Dashboard = () => {
             <h1 className="text-4xl font-bold">لوحة التحكم</h1>
             <p className="text-muted-foreground">إدارة متجر Zahra</p>
           </div>
-          {currentUser && (
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-muted-foreground">
-                مرحباً، {currentUser.username}
-              </span>
-              <Button variant="outline" size="sm" onClick={logout}>
-                <LogOut className="ml-2 h-4 w-4" />
-                تسجيل خروج
-              </Button>
-            </div>
-          )}
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-muted-foreground">
+              مرحباً، {currentUser.username}
+            </span>
+            <Button variant="outline" size="sm" onClick={logout}>
+              <LogOut className="ml-2 h-4 w-4" />
+              تسجيل خروج
+            </Button>
+          </div>
         </div>
 
         <div className="mb-8">
           <SearchBar />
         </div>
 
-        {!isLoadingLowStock && lowStockProducts && lowStockProducts.length > 0 && (
+        {!isLoadingLowStock && lowStockProducts && lowStockProducts.length > 0 && canView('products') && (
           <Card className="mb-8 border-destructive/50 bg-destructive/5">
             <CardHeader>
               <div className="flex items-center gap-3">

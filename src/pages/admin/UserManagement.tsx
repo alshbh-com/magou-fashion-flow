@@ -7,8 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Plus, Trash2, Pencil, ArrowLeft, Key, Eye, EyeOff } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -32,6 +32,11 @@ const PERMISSIONS = [
   { id: 'user_management', label: 'إدارة المستخدمين' },
 ];
 
+interface PermissionSetting {
+  permission: string;
+  type: 'none' | 'view' | 'edit';
+}
+
 const UserManagement = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -41,7 +46,7 @@ const UserManagement = () => {
   const [permDialogOpen, setPermDialogOpen] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<any>(null);
-  const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
+  const [permissionSettings, setPermissionSettings] = useState<PermissionSetting[]>([]);
   const [showPasswords, setShowPasswords] = useState(false);
   
   const [newUser, setNewUser] = useState({ username: '', password: '' });
@@ -58,14 +63,19 @@ const UserManagement = () => {
       
       if (error) throw error;
 
-      // Fetch permissions for each user
       const usersWithPermissions = await Promise.all(
         (usersData || []).map(async (user) => {
           const { data: perms } = await supabase
             .from('admin_user_permissions')
-            .select('permission')
+            .select('permission, permission_type')
             .eq('user_id', user.id);
-          return { ...user, permissions: perms?.map(p => p.permission) || [] };
+          return { 
+            ...user, 
+            permissions: perms?.map(p => ({ 
+              permission: p.permission, 
+              type: p.permission_type 
+            })) || [] 
+          };
         })
       );
 
@@ -102,32 +112,37 @@ const UserManagement = () => {
       logActivity('إنشاء مستخدم', 'user_management', { username: data.username });
       setNewUser({ username: '', password: '' });
       setSelectedUser(data);
-      setSelectedPermissions([]);
+      // Initialize all permissions as 'none'
+      setPermissionSettings(PERMISSIONS.map(p => ({ permission: p.id, type: 'none' })));
       setCreateDialogOpen(false);
       setPermDialogOpen(true);
     },
     onError: (error: any) => {
       if (error.message?.includes('unique')) {
-        toast.error('اسم المستخدم موجود مسبقاً');
+        toast.error('اسم المستخدم أو كلمة المرور موجودة مسبقاً');
       } else {
         toast.error('حدث خطأ أثناء الإنشاء');
       }
     }
   });
 
-  type AdminPermission = "orders" | "products" | "categories" | "customers" | "agents" | "agent_orders" | "agent_payments" | "governorates" | "statistics" | "invoices" | "all_orders" | "settings" | "reset_data" | "user_management";
-
   // Save permissions mutation
   const savePermissionsMutation = useMutation({
-    mutationFn: async ({ userId, permissions }: { userId: string; permissions: string[] }) => {
+    mutationFn: async ({ userId, permissions }: { userId: string; permissions: PermissionSetting[] }) => {
       // Delete existing permissions
       await supabase.from('admin_user_permissions').delete().eq('user_id', userId);
       
-      // Insert new permissions
-      if (permissions.length > 0) {
-        const { error } = await supabase.from('admin_user_permissions').insert(
-          permissions.map(p => ({ user_id: userId, permission: p as AdminPermission }))
-        );
+      // Insert new permissions (only those that are not 'none')
+      const toInsert = permissions
+        .filter(p => p.type !== 'none')
+        .map(p => ({ 
+          user_id: userId, 
+          permission: p.permission,
+          permission_type: p.type
+        }));
+      
+      if (toInsert.length > 0) {
+        const { error } = await supabase.from('admin_user_permissions').insert(toInsert);
         if (error) throw error;
       }
     },
@@ -136,7 +151,7 @@ const UserManagement = () => {
       toast.success('تم حفظ الصلاحيات');
       logActivity('تعديل صلاحيات', 'user_management', { 
         userId: selectedUser?.id, 
-        permissions: selectedPermissions 
+        permissions: permissionSettings.filter(p => p.type !== 'none')
       });
       setPermDialogOpen(false);
     },
@@ -213,20 +228,41 @@ const UserManagement = () => {
 
   const handleEditPermissions = (user: any) => {
     setSelectedUser(user);
-    setSelectedPermissions(user.permissions || []);
+    // Map existing permissions to permission settings
+    const settings: PermissionSetting[] = PERMISSIONS.map(p => {
+      const existing = user.permissions?.find((up: any) => up.permission === p.id);
+      return {
+        permission: p.id,
+        type: existing ? existing.type : 'none'
+      };
+    });
+    setPermissionSettings(settings);
     setPermDialogOpen(true);
   };
 
-  const togglePermission = (permId: string) => {
-    setSelectedPermissions(prev =>
-      prev.includes(permId)
-        ? prev.filter(p => p !== permId)
-        : [...prev, permId]
+  const updatePermissionType = (permId: string, type: 'none' | 'view' | 'edit') => {
+    setPermissionSettings(prev =>
+      prev.map(p => p.permission === permId ? { ...p, type } : p)
     );
   };
 
-  const selectAllPermissions = () => {
-    setSelectedPermissions(PERMISSIONS.map(p => p.id));
+  const selectAllEdit = () => {
+    setPermissionSettings(PERMISSIONS.map(p => ({ permission: p.id, type: 'edit' })));
+  };
+
+  const selectAllView = () => {
+    setPermissionSettings(PERMISSIONS.map(p => ({ permission: p.id, type: 'view' })));
+  };
+
+  const clearAll = () => {
+    setPermissionSettings(PERMISSIONS.map(p => ({ permission: p.id, type: 'none' })));
+  };
+
+  const getPermissionCount = (user: any) => {
+    const viewCount = user.permissions?.filter((p: any) => p.type === 'view').length || 0;
+    const editCount = user.permissions?.filter((p: any) => p.type === 'edit').length || 0;
+    if (viewCount === 0 && editCount === 0) return 'لا توجد صلاحيات';
+    return `${editCount} تعديل، ${viewCount} مشاهدة`;
   };
 
   if (isLoading) {
@@ -297,7 +333,7 @@ const UserManagement = () => {
                   </DialogHeader>
                   <div className="space-y-4">
                     <div>
-                      <Label>اسم المستخدم</Label>
+                      <Label>اسم المستخدم (للتعريف فقط)</Label>
                       <Input
                         value={newUser.username}
                         onChange={(e) => setNewUser(prev => ({ ...prev, username: e.target.value }))}
@@ -305,13 +341,13 @@ const UserManagement = () => {
                       />
                     </div>
                     <div>
-                      <Label>كلمة المرور</Label>
+                      <Label>كلمة المرور (للدخول)</Label>
                       <div className="relative">
                         <Input
                           type={showPasswords ? 'text' : 'password'}
                           value={newUser.password}
                           onChange={(e) => setNewUser(prev => ({ ...prev, password: e.target.value }))}
-                          placeholder="كلمة المرور"
+                          placeholder="كلمة المرور الفريدة"
                         />
                         <button
                           type="button"
@@ -321,6 +357,9 @@ const UserManagement = () => {
                           {showPasswords ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </button>
                       </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        كلمة المرور يجب أن تكون فريدة - سيتم استخدامها للدخول
+                      </p>
                     </div>
                     <Button onClick={handleCreateUser} className="w-full">
                       إنشاء وتحديد الصلاحيات
@@ -348,7 +387,7 @@ const UserManagement = () => {
                     <TableCell className="font-mono text-sm">{user.password}</TableCell>
                     <TableCell>
                       <span className="text-sm text-muted-foreground">
-                        {user.permissions?.length || 0} صلاحية
+                        {getPermissionCount(user)}
                       </span>
                     </TableCell>
                     <TableCell>
@@ -394,27 +433,54 @@ const UserManagement = () => {
 
         {/* Permissions Dialog */}
         <Dialog open={permDialogOpen} onOpenChange={setPermDialogOpen}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>صلاحيات {selectedUser?.username}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
-              <Button variant="outline" size="sm" onClick={selectAllPermissions}>
-                تحديد الكل
-              </Button>
-              <div className="grid grid-cols-2 gap-3 max-h-64 overflow-y-auto">
-                {PERMISSIONS.map((perm) => (
-                  <label key={perm.id} className="flex items-center gap-2 cursor-pointer">
-                    <Checkbox
-                      checked={selectedPermissions.includes(perm.id)}
-                      onCheckedChange={() => togglePermission(perm.id)}
-                    />
-                    <span className="text-sm">{perm.label}</span>
-                  </label>
-                ))}
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={selectAllEdit}>
+                  تحديد الكل (تعديل)
+                </Button>
+                <Button variant="outline" size="sm" onClick={selectAllView}>
+                  تحديد الكل (مشاهدة)
+                </Button>
+                <Button variant="outline" size="sm" onClick={clearAll}>
+                  إلغاء الكل
+                </Button>
               </div>
+              
+              <div className="max-h-80 overflow-y-auto space-y-3">
+                {PERMISSIONS.map((perm) => {
+                  const setting = permissionSettings.find(p => p.permission === perm.id);
+                  return (
+                    <div key={perm.id} className="flex items-center justify-between border-b pb-2">
+                      <span className="text-sm font-medium">{perm.label}</span>
+                      <RadioGroup
+                        value={setting?.type || 'none'}
+                        onValueChange={(value) => updatePermissionType(perm.id, value as 'none' | 'view' | 'edit')}
+                        className="flex gap-3"
+                      >
+                        <div className="flex items-center gap-1">
+                          <RadioGroupItem value="none" id={`${perm.id}-none`} />
+                          <Label htmlFor={`${perm.id}-none`} className="text-xs cursor-pointer">لا</Label>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <RadioGroupItem value="view" id={`${perm.id}-view`} />
+                          <Label htmlFor={`${perm.id}-view`} className="text-xs cursor-pointer">مشاهدة</Label>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <RadioGroupItem value="edit" id={`${perm.id}-edit`} />
+                          <Label htmlFor={`${perm.id}-edit`} className="text-xs cursor-pointer">تعديل</Label>
+                        </div>
+                      </RadioGroup>
+                    </div>
+                  );
+                })}
+              </div>
+              
               <Button 
-                onClick={() => savePermissionsMutation.mutate({ userId: selectedUser?.id, permissions: selectedPermissions })}
+                onClick={() => savePermissionsMutation.mutate({ userId: selectedUser?.id, permissions: permissionSettings })}
                 className="w-full"
               >
                 حفظ الصلاحيات

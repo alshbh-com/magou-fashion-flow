@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { User, Eye, EyeOff } from 'lucide-react';
+import { KeyRound, Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,32 +7,27 @@ import { Label } from '@/components/ui/label';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { toast } from 'sonner';
 
-interface UserLoginProps {
-  onSkip?: () => void;
-}
-
-const UserLogin = ({ onSkip }: UserLoginProps) => {
+const UserLogin = () => {
   const { login } = useAdminAuth();
-  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username || !password) {
-      toast.error('أدخل اسم المستخدم وكلمة المرور');
+    if (!password) {
+      toast.error('أدخل كلمة المرور');
       return;
     }
 
     setLoading(true);
-    const success = await login(username, password);
+    const success = await login(password);
     setLoading(false);
 
     if (success) {
       toast.success('تم تسجيل الدخول بنجاح');
     } else {
-      toast.error('بيانات خاطئة أو الحساب غير نشط');
+      toast.error('كلمة المرور خاطئة أو الحساب غير نشط');
     }
   };
 
@@ -41,23 +36,13 @@ const UserLogin = ({ onSkip }: UserLoginProps) => {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="mx-auto mb-4 p-4 rounded-full bg-primary/10 w-fit">
-            <User className="h-12 w-12 text-primary" />
+            <KeyRound className="h-12 w-12 text-primary" />
           </div>
           <CardTitle className="text-2xl">تسجيل الدخول</CardTitle>
-          <p className="text-muted-foreground mt-2">أدخل بيانات حسابك</p>
+          <p className="text-muted-foreground mt-2">أدخل كلمة المرور الخاصة بك</p>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
-            <div className="space-y-2">
-              <Label>اسم المستخدم</Label>
-              <Input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="اسم المستخدم"
-                disabled={loading}
-              />
-            </div>
             <div className="space-y-2">
               <Label>كلمة المرور</Label>
               <div className="relative">
@@ -65,9 +50,10 @@ const UserLogin = ({ onSkip }: UserLoginProps) => {
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="كلمة المرور"
-                  className="pr-10"
+                  placeholder="أدخل كلمة المرور"
+                  className="pr-10 text-center text-lg tracking-widest"
                   disabled={loading}
+                  autoFocus
                 />
                 <button
                   type="button"
@@ -79,13 +65,8 @@ const UserLogin = ({ onSkip }: UserLoginProps) => {
               </div>
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'جاري التحقق...' : 'تسجيل الدخول'}
+              {loading ? 'جاري التحقق...' : 'دخول'}
             </Button>
-            {onSkip && (
-              <Button type="button" variant="ghost" className="w-full" onClick={onSkip}>
-                تخطي (دخول كامل الصلاحيات)
-              </Button>
-            )}
           </form>
         </CardContent>
       </Card>

@@ -1,19 +1,28 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
+interface Permission {
+  permission: string;
+  permission_type: 'view' | 'edit';
+}
+
 interface AdminUser {
   id: string;
   username: string;
-  permissions: string[];
+  password: string;
+  permissions: Permission[];
 }
 
 interface AdminAuthContextType {
   isLocked: boolean;
   currentUser: AdminUser | null;
   unlock: (password: string) => Promise<boolean>;
-  login: (username: string, password: string) => Promise<boolean>;
+  login: (password: string) => Promise<boolean>;
   logout: () => void;
-  hasPermission: (permission: string) => boolean;
+  hasPermission: (permission: string, type?: 'view' | 'edit') => boolean;
+  canEdit: (permission: string) => boolean;
+  canView: (permission: string) => boolean;
+  verifyUserPassword: (password: string) => boolean;
   logActivity: (action: string, section: string, details?: any) => Promise<void>;
 }
 
@@ -32,13 +41,11 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
   const [currentUser, setCurrentUser] = useState<AdminUser | null>(null);
 
   useEffect(() => {
-    // Check if already unlocked
     const unlocked = sessionStorage.getItem('adminUnlocked');
     if (unlocked === 'true') {
       setIsLocked(false);
     }
 
-    // Check for saved user
     const savedUser = sessionStorage.getItem('adminUser');
     if (savedUser) {
       setCurrentUser(JSON.parse(savedUser));
@@ -67,12 +74,12 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const login = async (username: string, password: string): Promise<boolean> => {
+  // Login by password only
+  const login = async (password: string): Promise<boolean> => {
     try {
       const { data: user, error: userError } = await supabase
         .from('admin_users')
         .select('*')
-        .eq('username', username)
         .eq('password', password)
         .eq('is_active', true)
         .single();
@@ -81,7 +88,7 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
 
       const { data: permissions, error: permError } = await supabase
         .from('admin_user_permissions')
-        .select('permission')
+        .select('permission, permission_type')
         .eq('user_id', user.id);
 
       if (permError) throw permError;
@@ -89,14 +96,17 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
       const adminUser: AdminUser = {
         id: user.id,
         username: user.username,
-        permissions: permissions?.map(p => p.permission) || []
+        password: user.password,
+        permissions: permissions?.map(p => ({ 
+          permission: p.permission, 
+          permission_type: p.permission_type as 'view' | 'edit'
+        })) || []
       };
 
       setCurrentUser(adminUser);
       sessionStorage.setItem('adminUser', JSON.stringify(adminUser));
 
-      // Log the login
-      await logActivity('تسجيل دخول', 'auth', { username });
+      await logActivity('تسجيل دخول', 'auth', { username: user.username });
 
       return true;
     } catch (error) {
@@ -113,9 +123,36 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
     sessionStorage.removeItem('adminUser');
   };
 
-  const hasPermission = (permission: string): boolean => {
-    if (!currentUser) return true; // If no user system, allow all
-    return currentUser.permissions.includes(permission) || currentUser.permissions.includes('user_management');
+  // Check if user has permission (with optional type check)
+  const hasPermission = (permission: string, type?: 'view' | 'edit'): boolean => {
+    if (!currentUser) return false;
+    
+    // user_management has full access
+    const hasUserMgmt = currentUser.permissions.some(p => p.permission === 'user_management');
+    if (hasUserMgmt) return true;
+
+    const userPerm = currentUser.permissions.find(p => p.permission === permission);
+    if (!userPerm) return false;
+
+    if (type === 'edit') {
+      return userPerm.permission_type === 'edit';
+    }
+    
+    return true; // view or any access
+  };
+
+  const canEdit = (permission: string): boolean => {
+    return hasPermission(permission, 'edit');
+  };
+
+  const canView = (permission: string): boolean => {
+    return hasPermission(permission);
+  };
+
+  // Verify the current user's password
+  const verifyUserPassword = (password: string): boolean => {
+    if (!currentUser) return false;
+    return currentUser.password === password;
   };
 
   const logActivity = async (action: string, section: string, details?: any) => {
@@ -140,6 +177,9 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
       login, 
       logout, 
       hasPermission,
+      canEdit,
+      canView,
+      verifyUserPassword,
       logActivity 
     }}>
       {children}
