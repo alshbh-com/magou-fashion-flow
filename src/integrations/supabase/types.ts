@@ -56,19 +56,22 @@ export type Database = {
         Row: {
           created_at: string | null
           id: string
-          permission: Database["public"]["Enums"]["admin_permission"]
+          permission: string
+          permission_type: string
           user_id: string
         }
         Insert: {
           created_at?: string | null
           id?: string
-          permission: Database["public"]["Enums"]["admin_permission"]
+          permission: string
+          permission_type?: string
           user_id: string
         }
         Update: {
           created_at?: string | null
           id?: string
-          permission?: Database["public"]["Enums"]["admin_permission"]
+          permission?: string
+          permission_type?: string
           user_id?: string
         }
         Relationships: [

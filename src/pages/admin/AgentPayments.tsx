@@ -9,19 +9,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Trash2, Plus, ArrowLeft, Pencil } from "lucide-react";
+import { Trash2, Plus, ArrowLeft, Pencil, Lock } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import PaymentPasswordDialog from "@/components/admin/PaymentPasswordDialog";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 
 const AgentPayments = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { canEdit, currentUser, logActivity } = useAdminAuth();
+  
   const [open, setOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
-  const [pendingPayment, setPendingPayment] = useState<{ amount: string; notes: string } | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ type: string; data?: any } | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [editingPayment, setEditingPayment] = useState<any>(null);
   
@@ -34,6 +37,8 @@ const AgentPayments = () => {
     amount: "",
     notes: ""
   });
+
+  const canEditPayments = canEdit('agent_payments');
 
   const { data: agents } = useQuery({
     queryKey: ["delivery_agents"],
@@ -48,13 +53,11 @@ const AgentPayments = () => {
     },
   });
 
-  // Calculate totals from agent_payments records
   const { data: agentData, isLoading } = useQuery({
     queryKey: ["agent_payments_summary", selectedAgentId],
     queryFn: async () => {
       if (!selectedAgentId) return null;
       
-      // Get all payments for this agent
       const { data: allPayments, error: paymentsError } = await supabase
         .from("agent_payments")
         .select("*")
@@ -63,29 +66,17 @@ const AgentPayments = () => {
       
       if (paymentsError) throw paymentsError;
 
-      // Categorize payments
       const owedPayments = allPayments?.filter(p => p.payment_type === 'owed') || [];
       const manualPayments = allPayments?.filter(p => p.payment_type === 'payment') || [];
       const deliveredPayments = allPayments?.filter(p => p.payment_type === 'delivered') || [];
       const deliveredResets = allPayments?.filter(p => p.payment_type === 'delivered_reset') || [];
 
-      // Total owed from orders assigned to agent
       const totalOwed = owedPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
-      
-      // Total paid by agent (manual payments)
       const totalPaid = manualPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
-      
-      // Total delivered (from delivered payments records)
       const totalDelivered = deliveredPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
-      
-      // Delivered resets
       const deliveredReset = deliveredResets.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0);
 
-      // المستحقات = إجمالي المعين - الطلبات المسلمة - المدفوعات
-      // Receivables = Total owed - Delivered - Payments
       const agentReceivables = Math.max(0, totalOwed - totalDelivered - totalPaid);
-      
-      // Net delivered for display
       const totalDeliveredNet = Math.max(0, totalDelivered - deliveredReset);
 
       return {
@@ -123,7 +114,7 @@ const AgentPayments = () => {
       queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
       queryClient.invalidateQueries({ queryKey: ["agent_orders_summary"] });
       toast.success("تم إضافة الدفعة بنجاح");
-      setOpen(false);
+      logActivity('إضافة دفعة مندوب', 'agent_payments', { agentId: selectedAgentId, amount: formData.amount });
       setFormData({ amount: "", notes: "" });
     },
     onError: () => {
@@ -135,7 +126,6 @@ const AgentPayments = () => {
     mutationFn: async () => {
       if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
       
-      // Record a delivered reset to zero the displayed delivered total
       const { error } = await supabase
         .from("agent_payments")
         .insert({
@@ -151,6 +141,7 @@ const AgentPayments = () => {
       queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
       queryClient.invalidateQueries({ queryKey: ["agent_orders_summary"] });
       toast.success("تم إعادة التعيين بنجاح");
+      logActivity('إعادة تعيين المسلم', 'agent_payments', { agentId: selectedAgentId });
     },
     onError: () => {
       toast.error("حدث خطأ أثناء إعادة التعيين");
@@ -161,7 +152,6 @@ const AgentPayments = () => {
     mutationFn: async () => {
       if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
 
-      // 1) Update all agent's orders to "delivered" status
       const { error: ordersError } = await supabase
         .from("orders")
         .update({ status: "delivered" })
@@ -169,7 +159,6 @@ const AgentPayments = () => {
         .in("status", ["pending", "shipped"]);
       if (ordersError) throw ordersError;
 
-      // 2) Delete all manual advance payments so advance shows 0
       const { error: deleteError } = await supabase
         .from("agent_payments")
         .delete()
@@ -180,14 +169,14 @@ const AgentPayments = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
       queryClient.invalidateQueries({ queryKey: ["agent_orders_summary"] });
-      toast.success("تم التقفيل بنجاح - تم تحويل جميع الطلبات إلى تم التوصيل");
+      toast.success("تم التقفيل بنجاح");
+      logActivity('تقفيل حساب مندوب', 'agent_payments', { agentId: selectedAgentId });
     },
     onError: () => {
       toast.error("حدث خطأ أثناء التقفيل");
     }
   });
 
-  // Reset only the advance payments (manual payments)
   const resetAdvanceMutation = useMutation({
     mutationFn: async () => {
       if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
@@ -202,6 +191,7 @@ const AgentPayments = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
       toast.success("تمت إعادة تعيين الدفعة المقدمة");
+      logActivity('إعادة تعيين دفعة مقدمة', 'agent_payments', { agentId: selectedAgentId });
     },
     onError: () => {
       toast.error("حدث خطأ أثناء إعادة تعيين الدفعة المقدمة");
@@ -223,6 +213,7 @@ const AgentPayments = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
       toast.success("تم التعديل بنجاح");
+      logActivity('تعديل دفعة', 'agent_payments', { paymentId: editingPayment?.id });
       setEditOpen(false);
       setEditingPayment(null);
     },
@@ -244,11 +235,49 @@ const AgentPayments = () => {
       queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
       queryClient.invalidateQueries({ queryKey: ["agent_orders_summary"] });
       toast.success("تم الحذف بنجاح");
+      logActivity('حذف دفعة', 'agent_payments');
     },
     onError: () => {
       toast.error("حدث خطأ أثناء الحذف");
     }
   });
+
+  // Request password before any action
+  const requestPasswordForAction = (type: string, data?: any) => {
+    if (!currentUser) {
+      toast.error('يجب تسجيل الدخول أولاً');
+      return;
+    }
+    setPendingAction({ type, data });
+    setPasswordDialogOpen(true);
+  };
+
+  const handlePasswordSuccess = () => {
+    if (!pendingAction) return;
+    
+    switch (pendingAction.type) {
+      case 'create':
+        createMutation.mutate(pendingAction.data);
+        setOpen(false);
+        break;
+      case 'edit':
+        updateMutation.mutate(pendingAction.data);
+        break;
+      case 'delete':
+        deleteMutation.mutate(pendingAction.data);
+        break;
+      case 'settle':
+        settleMutation.mutate();
+        break;
+      case 'resetDelivered':
+        resetDeliveredMutation.mutate();
+        break;
+      case 'resetAdvance':
+        resetAdvanceMutation.mutate();
+        break;
+    }
+    setPendingAction(null);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -256,17 +285,7 @@ const AgentPayments = () => {
       toast.error("يرجى ملء جميع الحقول");
       return;
     }
-    // Store pending payment and open password dialog
-    setPendingPayment({ amount: formData.amount, notes: formData.notes });
-    setOpen(false);
-    setPasswordDialogOpen(true);
-  };
-
-  const handlePasswordSuccess = () => {
-    if (pendingPayment) {
-      createMutation.mutate(pendingPayment);
-      setPendingPayment(null);
-    }
+    requestPasswordForAction('create', { amount: formData.amount, notes: formData.notes });
   };
 
   const handleEditSubmit = (e: React.FormEvent) => {
@@ -275,7 +294,7 @@ const AgentPayments = () => {
       toast.error("يرجى ملء المبلغ");
       return;
     }
-    updateMutation.mutate({
+    requestPasswordForAction('edit', {
       id: editingPayment.id,
       amount: editFormData.amount,
       notes: editFormData.notes
@@ -303,75 +322,67 @@ const AgentPayments = () => {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>دفعات المندوب</CardTitle>
-            <div className="flex gap-2">
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button 
-                    disabled={!selectedAgentId}
-                    className="bg-green-600 hover:bg-green-700"
-                  >
-                    تقفيل
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>تأكيد التقفيل</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      هل أنت متأكد من تقفيل حساب المندوب؟ سيتم حذف جميع سجلات الدفعات.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>إلغاء</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => settleMutation.mutate()}>
-                      موافق
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-              <Dialog open={open} onOpenChange={setOpen}>
-                <DialogTrigger asChild>
-                  <Button disabled={!selectedAgentId}>
-                    <Plus className="ml-2 h-4 w-4" />
-                    إضافة دفعة
-                  </Button>
-                </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>إضافة دفعة جديدة</DialogTitle>
-                </DialogHeader>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  <div>
-                    <Label htmlFor="amount">المبلغ (ج.م)</Label>
-                    <Input
-                      id="amount"
-                      type="number"
-                      step="0.01"
-                      value={formData.amount}
-                      onChange={(e) => setFormData({...formData, amount: e.target.value})}
-                      required
-                      placeholder="أدخل المبلغ المدفوع"
-                    />
-                  </div>
-                  
-                  <div>
-                    <Label htmlFor="notes">ملاحظات</Label>
-                    <Textarea
-                      id="notes"
-                      value={formData.notes}
-                      onChange={(e) => setFormData({...formData, notes: e.target.value})}
-                      rows={2}
-                      placeholder="أضف ملاحظات (اختياري)"
-                    />
-                  </div>
-                  
-                  <Button type="submit" className="w-full">
-                    إضافة دفعة
-                  </Button>
-                </form>
-              </DialogContent>
-              </Dialog>
-            </div>
+            <CardTitle className="flex items-center gap-2">
+              دفعات المندوب
+              {!canEditPayments && (
+                <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded">مشاهدة فقط</span>
+              )}
+            </CardTitle>
+            {canEditPayments && (
+              <div className="flex gap-2">
+                <Button 
+                  disabled={!selectedAgentId}
+                  className="bg-green-600 hover:bg-green-700"
+                  onClick={() => requestPasswordForAction('settle')}
+                >
+                  <Lock className="ml-2 h-4 w-4" />
+                  تقفيل
+                </Button>
+                <Dialog open={open} onOpenChange={setOpen}>
+                  <DialogTrigger asChild>
+                    <Button disabled={!selectedAgentId}>
+                      <Plus className="ml-2 h-4 w-4" />
+                      إضافة دفعة
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>إضافة دفعة جديدة</DialogTitle>
+                    </DialogHeader>
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                      <div>
+                        <Label htmlFor="amount">المبلغ (ج.م)</Label>
+                        <Input
+                          id="amount"
+                          type="number"
+                          step="0.01"
+                          value={formData.amount}
+                          onChange={(e) => setFormData({...formData, amount: e.target.value})}
+                          required
+                          placeholder="أدخل المبلغ المدفوع"
+                        />
+                      </div>
+                      
+                      <div>
+                        <Label htmlFor="notes">ملاحظات</Label>
+                        <Textarea
+                          id="notes"
+                          value={formData.notes}
+                          onChange={(e) => setFormData({...formData, notes: e.target.value})}
+                          rows={2}
+                          placeholder="أضف ملاحظات (اختياري)"
+                        />
+                      </div>
+                      
+                      <Button type="submit" className="w-full">
+                        <Lock className="ml-2 h-4 w-4" />
+                        إضافة دفعة
+                      </Button>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            )}
           </CardHeader>
           <CardContent>
             <div className="mb-6">
@@ -404,27 +415,16 @@ const AgentPayments = () => {
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <p className="text-sm text-muted-foreground">إجمالي الطلبات المسلمة</p>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="outline" size="sm">
-                              إعادة تعيين
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>تأكيد إعادة التعيين</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                هل أنت متأكد من إعادة تعيين إجمالي الطلبات المسلمة؟ سيتم تصفير المبلغ.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>إلغاء</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => resetDeliveredMutation.mutate()}>
-                                موافق
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                        {canEditPayments && (
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => requestPasswordForAction('resetDelivered')}
+                          >
+                            <Lock className="ml-1 h-3 w-3" />
+                            إعادة تعيين
+                          </Button>
+                        )}
                       </div>
                       <p className="text-2xl font-bold text-blue-600">
                         {agentData.totalDeliveredNet.toFixed(2)} ج.م
@@ -433,27 +433,16 @@ const AgentPayments = () => {
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <p className="text-sm text-muted-foreground">دفعة مقدمة</p>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="outline" size="sm">
-                              إعادة تعيين
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>تأكيد إعادة تعيين الدفعة المقدمة</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                سيتم تصفير إجمالي الدفعات المقدمة ويمكنك إدخال مبلغ جديد لاحقًا.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>إلغاء</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => resetAdvanceMutation.mutate()}>
-                                موافق
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                        {canEditPayments && (
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => requestPasswordForAction('resetAdvance')}
+                          >
+                            <Lock className="ml-1 h-3 w-3" />
+                            إعادة تعيين
+                          </Button>
+                        )}
                       </div>
                       <p className="text-2xl font-bold text-green-600">
                         {agentData.totalPaid.toFixed(2)} ج.م
@@ -478,7 +467,7 @@ const AgentPayments = () => {
                       <TableHead>المبلغ</TableHead>
                       <TableHead>ملاحظات</TableHead>
                       <TableHead>التاريخ</TableHead>
-                      <TableHead>إجراءات</TableHead>
+                      {canEditPayments && <TableHead>إجراءات</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -491,38 +480,26 @@ const AgentPayments = () => {
                         <TableCell>
                           {new Date(payment.created_at).toLocaleDateString("ar-EG")}
                         </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              onClick={() => handleEdit(payment)}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button variant="destructive" size="icon">
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    هل أنت متأكد من حذف هذه الدفعة؟
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>إلغاء</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => deleteMutation.mutate(payment.id)}>
-                                    حذف
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </div>
-                        </TableCell>
+                        {canEditPayments && (
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                onClick={() => handleEdit(payment)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="destructive" 
+                                size="icon"
+                                onClick={() => requestPasswordForAction('delete', payment.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>
@@ -562,11 +539,21 @@ const AgentPayments = () => {
               </div>
               
               <Button type="submit" className="w-full">
+                <Lock className="ml-2 h-4 w-4" />
                 حفظ التعديلات
               </Button>
             </form>
           </DialogContent>
         </Dialog>
+
+        {/* Password Dialog */}
+        <PaymentPasswordDialog
+          open={passwordDialogOpen}
+          onOpenChange={setPasswordDialogOpen}
+          onSuccess={handlePasswordSuccess}
+          title="تأكيد العملية"
+          description="أدخل كلمة المرور الخاصة بك لتنفيذ هذه العملية"
+        />
       </div>
     </div>
   );
