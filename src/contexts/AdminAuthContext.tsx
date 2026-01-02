@@ -14,9 +14,7 @@ interface AdminUser {
 }
 
 interface AdminAuthContextType {
-  isLocked: boolean;
   currentUser: AdminUser | null;
-  unlock: (password: string) => Promise<boolean>;
   login: (password: string) => Promise<boolean>;
   logout: () => void;
   hasPermission: (permission: string, type?: 'view' | 'edit') => boolean;
@@ -37,42 +35,14 @@ export const useAdminAuth = () => {
 };
 
 export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
-  const [isLocked, setIsLocked] = useState(true);
   const [currentUser, setCurrentUser] = useState<AdminUser | null>(null);
 
   useEffect(() => {
-    const unlocked = sessionStorage.getItem('adminUnlocked');
-    if (unlocked === 'true') {
-      setIsLocked(false);
-    }
-
     const savedUser = sessionStorage.getItem('adminUser');
     if (savedUser) {
       setCurrentUser(JSON.parse(savedUser));
     }
   }, []);
-
-  const unlock = async (password: string): Promise<boolean> => {
-    try {
-      const { data, error } = await supabase
-        .from('system_passwords')
-        .select('password')
-        .eq('id', 'master')
-        .single();
-
-      if (error) throw error;
-
-      if (data.password === password) {
-        setIsLocked(false);
-        sessionStorage.setItem('adminUnlocked', 'true');
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error('Error checking password:', error);
-      return false;
-    }
-  };
 
   // Login by password only
   const login = async (password: string): Promise<boolean> => {
@@ -171,9 +141,7 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <AdminAuthContext.Provider value={{ 
-      isLocked, 
       currentUser, 
-      unlock, 
       login, 
       logout, 
       hasPermission,
