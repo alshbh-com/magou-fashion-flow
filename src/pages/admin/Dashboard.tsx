@@ -23,7 +23,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
-import MasterLock from "@/components/admin/MasterLock";
 import UserLogin from "@/components/admin/UserLogin";
 
 const adminSections = [
@@ -47,13 +46,13 @@ const LOW_STOCK_THRESHOLD = 10;
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const { isLocked, currentUser, canView, logout, logActivity } = useAdminAuth();
+  const { currentUser, canView, logout, logActivity } = useAdminAuth();
 
   useEffect(() => {
-    if (!isLocked && currentUser) {
+    if (currentUser) {
       logActivity('دخول لوحة التحكم', 'dashboard');
     }
-  }, [isLocked, currentUser]);
+  }, [currentUser]);
 
   const { data: lowStockProducts, isLoading: isLoadingLowStock } = useQuery({
     queryKey: ["lowStockProducts"],
@@ -67,13 +66,8 @@ const Dashboard = () => {
       if (error) throw error;
       return data;
     },
-    enabled: !isLocked && !!currentUser
+    enabled: !!currentUser
   });
-
-  // Show lock screen if locked
-  if (isLocked) {
-    return <MasterLock />;
-  }
 
   // Show login screen if no user
   if (!currentUser) {
