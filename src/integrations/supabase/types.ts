@@ -772,6 +772,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      delete_old_activity_logs: { Args: never; Returns: undefined }
       reset_order_sequence: { Args: never; Returns: undefined }
     }
     Enums: {

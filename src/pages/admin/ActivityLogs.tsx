@@ -1,15 +1,26 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ArrowLeft, Activity } from 'lucide-react';
+import { ArrowLeft, Activity, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
+import { useEffect } from 'react';
+import { toast } from 'sonner';
 
 const ActivityLogs = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  // Auto-delete logs older than 3 days on component load
+  useEffect(() => {
+    const deleteOldLogs = async () => {
+      await supabase.rpc('delete_old_activity_logs');
+    };
+    deleteOldLogs();
+  }, []);
 
   const { data: logs, isLoading } = useQuery({
     queryKey: ['activity_logs'],
@@ -24,6 +35,17 @@ const ActivityLogs = () => {
       return data;
     },
     refetchInterval: 5000
+  });
+
+  const clearAllMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from('activity_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['activity_logs'] });
+      toast.success('تم مسح السجل');
+    }
   });
 
   const getSectionLabel = (section: string) => {
@@ -58,11 +80,16 @@ const ActivityLogs = () => {
         </Button>
 
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <Activity className="h-5 w-5" />
               سجل النشاط
+              <span className="text-sm font-normal text-muted-foreground">(يتم حذف السجلات بعد 3 أيام تلقائياً)</span>
             </CardTitle>
+            <Button variant="destructive" size="sm" onClick={() => clearAllMutation.mutate()}>
+              <Trash2 className="ml-2 h-4 w-4" />
+              مسح الكل
+            </Button>
           </CardHeader>
           <CardContent>
             <div className="max-h-[70vh] overflow-y-auto">

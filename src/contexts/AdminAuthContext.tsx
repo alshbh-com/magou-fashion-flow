@@ -97,10 +97,7 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
   const hasPermission = (permission: string, type?: 'view' | 'edit'): boolean => {
     if (!currentUser) return false;
     
-    // user_management has full access
-    const hasUserMgmt = currentUser.permissions.some(p => p.permission === 'user_management');
-    if (hasUserMgmt) return true;
-
+    // Check for the specific permission only
     const userPerm = currentUser.permissions.find(p => p.permission === permission);
     if (!userPerm) return false;
 

@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import * as XLSX from 'xlsx';
+import { formatOrderItems, formatSizesDisplay } from "@/lib/formatOrderItems";
 
 const Orders = () => {
   const navigate = useNavigate();
@@ -166,39 +167,10 @@ const Orders = () => {
     },
   });
 
-  // Helper function to get product name from order item
-  const getProductInfo = (item: any) => {
-    // Try to parse product_details JSON first
-    try {
-      if (item.product_details) {
-        const details = typeof item.product_details === 'string' 
-          ? JSON.parse(item.product_details) 
-          : item.product_details;
-        return {
-          name: details.name || details.product_name || item.products?.name || "منتج محذوف",
-          price: details.price || item.price,
-          size: details.size || item.size,
-          color: details.color || item.color
-        };
-      }
-    } catch (e) {
-      // If JSON parse fails, check if it's a plain string
-      if (typeof item.product_details === 'string' && item.product_details.trim()) {
-        return {
-          name: item.product_details,
-          price: item.price,
-          size: item.size,
-          color: item.color
-        };
-      }
-    }
-    // Fallback to products relation or show "منتج محذوف"
-    return {
-      name: item.products?.name || "منتج محذوف",
-      price: item.price,
-      size: item.size,
-      color: item.color
-    };
+  // Use the new formatting utility
+  const getFormattedItems = (orderItems: any[]) => {
+    if (!orderItems || orderItems.length === 0) return null;
+    return formatOrderItems(orderItems);
   };
 
   const deleteOrderMutation = useMutation({
@@ -381,10 +353,8 @@ const Orders = () => {
               return order.order_details;
             }
           }
-          return order.order_items?.map((item: any) => {
-            const productInfo = getProductInfo(item);
-            return `${productInfo.name} × ${item.quantity}`;
-          }).join(", ");
+          const formatted = getFormattedItems(order.order_items);
+          return formatted?.map((item) => `${item.name} × ${item.totalQuantity}`).join(", ") || "-";
         })(),
         "الصافي": totalAmount.toFixed(2),
         "الخصم": discount.toFixed(2),
@@ -456,17 +426,15 @@ const Orders = () => {
       }
       
       if (!orderItemsHtml && order.order_items) {
-        orderItemsHtml = order.order_items.map((item: any) => {
-          const productInfo = getProductInfo(item);
-          return `
-            <tr>
-              <td style="border: 1px solid #000; padding: 8px; text-align: center;">${productInfo.name}</td>
-              <td style="border: 1px solid #000; padding: 8px; text-align: center;">${item.size || '-'}</td>
-              <td style="border: 1px solid #000; padding: 8px; text-align: center;">${item.color || '-'}</td>
-              <td style="border: 1px solid #000; padding: 8px; text-align: center;">${parseFloat(productInfo.price.toString()).toFixed(2)} ج.م</td>
-            </tr>
-          `;
-        }).join('');
+        const formatted = getFormattedItems(order.order_items);
+        orderItemsHtml = formatted?.map((item) => `
+          <tr>
+            <td style="border: 1px solid #000; padding: 8px; text-align: center;">${item.name}</td>
+            <td style="border: 1px solid #000; padding: 8px; text-align: center;">${formatSizesDisplay(item.sizes)}</td>
+            <td style="border: 1px solid #000; padding: 8px; text-align: center;">${item.color || '-'}</td>
+            <td style="border: 1px solid #000; padding: 8px; text-align: center;">${item.totalPrice.toFixed(2)} ج.م</td>
+          </tr>
+        `).join('') || '';
       }
 
       const totalAmount = parseFloat(order.total_amount?.toString() || "0");
@@ -782,34 +750,25 @@ const Orders = () => {
                           <TableCell className="max-w-xs break-words whitespace-normal">{order.customers?.address}</TableCell>
                           <TableCell className="max-w-xs">
                             {(() => {
-                              // Always use order_items as primary source for detailed info
-                              if (order.order_items && order.order_items.length > 0) {
+                              const formattedItems = getFormattedItems(order.order_items);
+                              if (formattedItems && formattedItems.length > 0) {
                                 return (
                                   <div className="text-xs space-y-2">
-                                    {order.order_items.map((item: any, idx: number) => {
-                                      const productInfo = getProductInfo(item);
-                                      const size = item.size || productInfo.size;
-                                      const color = item.color || productInfo.color;
-                                      return (
-                                        <div key={idx} className="bg-muted/50 p-2 rounded">
-                                          <div className="font-medium">{productInfo.name} × {item.quantity}</div>
-                                          {(size || color) && (
-                                            <div className="text-muted-foreground mt-1 flex flex-wrap gap-2">
-                                              {size && (
-                                                <span className="bg-primary/10 px-2 py-0.5 rounded text-primary">
-                                                  مقاس: {size}
-                                                </span>
-                                              )}
-                                              {color && (
-                                                <span className="bg-secondary/50 px-2 py-0.5 rounded">
-                                                  لون: {color}
-                                                </span>
-                                              )}
-                                            </div>
+                                    {formattedItems.map((item, idx) => (
+                                      <div key={idx} className="bg-muted/50 p-2 rounded">
+                                        <div className="font-medium">{item.name} × {item.totalQuantity}</div>
+                                        <div className="text-muted-foreground mt-1 flex flex-wrap gap-2">
+                                          <span className="bg-primary/10 px-2 py-0.5 rounded text-primary">
+                                            {formatSizesDisplay(item.sizes)}
+                                          </span>
+                                          {item.color && (
+                                            <span className="bg-secondary/50 px-2 py-0.5 rounded">
+                                              لون: {item.color}
+                                            </span>
                                           )}
                                         </div>
-                                      );
-                                    })}
+                                      </div>
+                                    ))}
                                   </div>
                                 );
                               }
