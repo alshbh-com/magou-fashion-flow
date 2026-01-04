@@ -192,6 +192,102 @@ export type Database = {
         }
         Relationships: []
       }
+      cashbox: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          opening_balance: number
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          opening_balance?: number
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          opening_balance?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cashbox_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "admin_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cashbox_transactions: {
+        Row: {
+          amount: number
+          cashbox_id: string
+          created_at: string | null
+          description: string | null
+          id: string
+          order_id: string | null
+          reason: string
+          type: string
+          user_id: string | null
+          username: string | null
+        }
+        Insert: {
+          amount: number
+          cashbox_id: string
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          order_id?: string | null
+          reason: string
+          type: string
+          user_id?: string | null
+          username?: string | null
+        }
+        Update: {
+          amount?: number
+          cashbox_id?: string
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          order_id?: string | null
+          reason?: string
+          type?: string
+          user_id?: string | null
+          username?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cashbox_transactions_cashbox_id_fkey"
+            columns: ["cashbox_id"]
+            isOneToOne: false
+            referencedRelation: "cashbox"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cashbox_transactions_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cashbox_transactions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "admin_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       categories: {
         Row: {
           created_at: string | null
@@ -811,7 +907,20 @@ export type Database = {
     }
     Functions: {
       delete_old_activity_logs: { Args: never; Returns: undefined }
+      log_failed_delete_attempt: {
+        Args: {
+          item_id: string
+          section_name: string
+          user_id_input?: string
+          username_input?: string
+        }
+        Returns: undefined
+      }
       reset_order_sequence: { Args: never; Returns: undefined }
+      verify_admin_password: {
+        Args: { input_password: string }
+        Returns: boolean
+      }
     }
     Enums: {
       admin_permission:
@@ -829,6 +938,7 @@ export type Database = {
         | "settings"
         | "reset_data"
         | "user_management"
+        | "cashbox"
       order_status:
         | "pending"
         | "processing"
@@ -982,6 +1092,7 @@ export const Constants = {
         "settings",
         "reset_data",
         "user_management",
+        "cashbox",
       ],
       order_status: [
         "pending",

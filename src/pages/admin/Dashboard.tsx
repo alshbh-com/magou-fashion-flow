@@ -32,7 +32,7 @@ const adminSections = [
   { title: "الأوردرات", description: "إدارة الطلبات", icon: ShoppingCart, path: "/admin/orders", color: "text-orange-500", permission: "orders" },
   { title: "أوردرات المندوب", description: "طلبات كل مندوب", icon: Package, path: "/admin/agent-orders", color: "text-purple-500", permission: "agent_orders" },
   { title: "مستحقات على المندوب", description: "المدفوعات والمستحقات", icon: DollarSign, path: "/admin/agent-payments", color: "text-yellow-500", permission: "agent_payments" },
-  { title: "الخزانة", description: "إدارة الإيداعات والمسحوبات", icon: Wallet, path: "/admin/treasury", color: "text-emerald-500", permission: "treasury" },
+  { title: "الخزنة", description: "نظام الخزنة الآمن - لا حذف/تعديل", icon: Wallet, path: "/admin/cashbox", color: "text-emerald-500", permission: "cashbox" },
   { title: "المنتجات", description: "إدارة المنتجات والعروض", icon: Settings, path: "/admin/products", color: "text-red-500", permission: "products" },
   { title: "الأقسام", description: "إدارة أقسام المنتجات", icon: Settings, path: "/admin/categories", color: "text-indigo-500", permission: "categories" },
   { title: "الإحصائيات", description: "إحصائيات المبيعات", icon: BarChart, path: "/admin/statistics", color: "text-cyan-500", permission: "statistics" },
