@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   UserCog,
   Activity,
+  Wallet,
   LogOut
 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -30,7 +31,8 @@ const adminSections = [
   { title: "بيانات المندوبين", description: "إدارة المندوبين", icon: Truck, path: "/admin/agents", color: "text-green-500", permission: "agents" },
   { title: "الأوردرات", description: "إدارة الطلبات", icon: ShoppingCart, path: "/admin/orders", color: "text-orange-500", permission: "orders" },
   { title: "أوردرات المندوب", description: "طلبات كل مندوب", icon: Package, path: "/admin/agent-orders", color: "text-purple-500", permission: "agent_orders" },
-  { title: "دفعات المندوب", description: "المدفوعات والمستحقات", icon: DollarSign, path: "/admin/agent-payments", color: "text-yellow-500", permission: "agent_payments" },
+  { title: "مستحقات على المندوب", description: "المدفوعات والمستحقات", icon: DollarSign, path: "/admin/agent-payments", color: "text-yellow-500", permission: "agent_payments" },
+  { title: "الخزانة", description: "إدارة الإيداعات والمسحوبات", icon: Wallet, path: "/admin/treasury", color: "text-emerald-500", permission: "treasury" },
   { title: "المنتجات", description: "إدارة المنتجات والعروض", icon: Settings, path: "/admin/products", color: "text-red-500", permission: "products" },
   { title: "الأقسام", description: "إدارة أقسام المنتجات", icon: Settings, path: "/admin/categories", color: "text-indigo-500", permission: "categories" },
   { title: "الإحصائيات", description: "إحصائيات المبيعات", icon: BarChart, path: "/admin/statistics", color: "text-cyan-500", permission: "statistics" },
