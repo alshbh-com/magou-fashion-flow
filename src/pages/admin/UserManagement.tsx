@@ -10,10 +10,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Switch } from '@/components/ui/switch';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Plus, Trash2, Pencil, ArrowLeft, Key, Eye, EyeOff } from 'lucide-react';
+import { Plus, Trash2, Pencil, ArrowLeft, Key, Eye, EyeOff, ShieldAlert } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
+import AdminPasswordDialog from '@/components/admin/AdminPasswordDialog';
 
 const PERMISSIONS = [
   { id: 'orders', label: 'الأوردرات' },
@@ -30,6 +31,8 @@ const PERMISSIONS = [
   { id: 'settings', label: 'الإعدادات' },
   { id: 'reset_data', label: 'مسح البيانات' },
   { id: 'user_management', label: 'إدارة المستخدمين' },
+  { id: 'cashbox', label: 'الخزنة' },
+  { id: 'treasury', label: 'الخزانة (قديم)' },
 ];
 
 interface PermissionSetting {
@@ -45,6 +48,8 @@ const UserManagement = () => {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [permDialogOpen, setPermDialogOpen] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [adminDeleteDialogOpen, setAdminDeleteDialogOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<any>(null);
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [permissionSettings, setPermissionSettings] = useState<PermissionSetting[]>([]);
   const [showPasswords, setShowPasswords] = useState(false);
@@ -401,27 +406,17 @@ const UserManagement = () => {
                         <Button size="icon" variant="ghost" onClick={() => handleEditPermissions(user)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button size="icon" variant="ghost" className="text-destructive">
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>حذف المستخدم</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                هل أنت متأكد من حذف المستخدم {user.username}؟
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>إلغاء</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => deleteUserMutation.mutate(user.id)}>
-                                حذف
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                        <Button 
+                          size="icon" 
+                          variant="ghost" 
+                          className="text-destructive"
+                          onClick={() => {
+                            setUserToDelete(user);
+                            setAdminDeleteDialogOpen(true);
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -488,6 +483,21 @@ const UserManagement = () => {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Admin Password Dialog for Delete */}
+        <AdminPasswordDialog
+          open={adminDeleteDialogOpen}
+          onOpenChange={setAdminDeleteDialogOpen}
+          onConfirm={() => {
+            if (userToDelete) {
+              deleteUserMutation.mutate(userToDelete.id);
+              setUserToDelete(null);
+            }
+          }}
+          title="حذف المستخدم"
+          description={`لحذف المستخدم "${userToDelete?.username}" يجب إدخال كلمة المرور الإدارية`}
+          itemType="user_management"
+        />
       </div>
     </div>
   );

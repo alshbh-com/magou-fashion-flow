@@ -6,12 +6,23 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { ArrowLeft, PackageX } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { formatOrderItems, formatSizesDisplay } from "@/lib/formatOrderItems";
+
+interface ReturnItem {
+  product_id: string | null;
+  product_name: string;
+  total_quantity: number;
+  returned_quantity: number;
+  price: number;
+}
 
 const AllOrders = () => {
   const navigate = useNavigate();
@@ -22,6 +33,12 @@ const AllOrders = () => {
   const [governorateFilter, setGovernorateFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [editingStatus, setEditingStatus] = useState<{orderId: string, currentStatus: string} | null>(null);
+  
+  // Partial return state
+  const [partialReturnDialogOpen, setPartialReturnDialogOpen] = useState(false);
+  const [selectedOrderForReturn, setSelectedOrderForReturn] = useState<any>(null);
+  const [returnItems, setReturnItems] = useState<ReturnItem[]>([]);
+  const [returnNotes, setReturnNotes] = useState("");
 
   const { data: orders, isLoading } = useQuery({
     queryKey: ["all-orders"],
@@ -97,6 +114,15 @@ const AllOrders = () => {
       orderId: string; 
       newStatus: string; 
     }) => {
+      // For partial return, open dialog instead of direct update
+      if (newStatus === 'partially_returned') {
+        const order = orders?.find(o => o.id === orderId);
+        if (order) {
+          openPartialReturnDialog(order);
+        }
+        return;
+      }
+      
       // Database trigger handles all agent payment logic automatically
       const { error } = await supabase
         .from("orders")
@@ -108,6 +134,8 @@ const AllOrders = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["all-orders"] });
       queryClient.invalidateQueries({ queryKey: ["agent-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
+      queryClient.invalidateQueries({ queryKey: ["agent_payments"] });
       toast.success("تم تحديث حالة الأوردر بنجاح");
       setEditingStatus(null);
     },
@@ -116,6 +144,127 @@ const AllOrders = () => {
       toast.error("حدث خطأ أثناء تحديث الحالة");
     },
   });
+
+  // Open partial return dialog
+  const openPartialReturnDialog = (order: any) => {
+    setSelectedOrderForReturn(order);
+    const items: ReturnItem[] = order.order_items?.map((item: any) => ({
+      product_id: item.product_id,
+      product_name: item.products?.name || item.product_details ? JSON.parse(item.product_details)?.name : "منتج",
+      total_quantity: item.quantity,
+      returned_quantity: 0,
+      price: parseFloat(item.price?.toString() || "0")
+    })) || [];
+    setReturnItems(items);
+    setReturnNotes("");
+    setPartialReturnDialogOpen(true);
+    setEditingStatus(null);
+  };
+
+  // Handle partial return submission
+  const partialReturnMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedOrderForReturn) throw new Error("No order selected");
+      
+      const returnedItems = returnItems.filter(item => item.returned_quantity > 0);
+      if (returnedItems.length === 0) {
+        throw new Error("يجب تحديد عناصر للإرجاع");
+      }
+      
+      // Calculate return amount
+      const returnAmount = returnedItems.reduce((sum, item) => {
+        return sum + (item.returned_quantity * item.price);
+      }, 0);
+      
+      // Create return record
+      const { error: returnError } = await supabase
+        .from("returns")
+        .insert([{
+          order_id: selectedOrderForReturn.id,
+          customer_id: selectedOrderForReturn.customer_id,
+          delivery_agent_id: selectedOrderForReturn.delivery_agent_id,
+          return_amount: returnAmount,
+          returned_items: returnedItems as any,
+          notes: returnNotes
+        }]);
+      
+      if (returnError) throw returnError;
+      
+      // Update order status to partially_returned
+      const { error: orderError } = await supabase
+        .from("orders")
+        .update({ 
+          status: 'partially_returned' as any,
+          total_amount: parseFloat(selectedOrderForReturn.total_amount?.toString() || "0") - returnAmount
+        })
+        .eq("id", selectedOrderForReturn.id);
+      
+      if (orderError) throw orderError;
+      
+      // If there's an agent assigned, deduct from their owed amount
+      if (selectedOrderForReturn.delivery_agent_id) {
+        // Get agent's current total_owed
+        const { data: agent, error: agentFetchError } = await supabase
+          .from("delivery_agents")
+          .select("total_owed")
+          .eq("id", selectedOrderForReturn.delivery_agent_id)
+          .single();
+        
+        if (agentFetchError) throw agentFetchError;
+        
+        const currentOwed = parseFloat(agent?.total_owed?.toString() || "0");
+        const newOwed = currentOwed - returnAmount;
+        
+        // Update agent's total_owed
+        const { error: agentUpdateError } = await supabase
+          .from("delivery_agents")
+          .update({ total_owed: newOwed })
+          .eq("id", selectedOrderForReturn.delivery_agent_id);
+        
+        if (agentUpdateError) throw agentUpdateError;
+        
+        // Create payment record for the return
+        const { error: paymentError } = await supabase
+          .from("agent_payments")
+          .insert({
+            delivery_agent_id: selectedOrderForReturn.delivery_agent_id,
+            order_id: selectedOrderForReturn.id,
+            amount: -returnAmount,
+            payment_type: 'return',
+            notes: `مرتجع جزئي - ${returnedItems.map(i => `${i.product_name} × ${i.returned_quantity}`).join(", ")}`
+          });
+        
+        if (paymentError) throw paymentError;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["all-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["agent-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
+      queryClient.invalidateQueries({ queryKey: ["agent_payments"] });
+      queryClient.invalidateQueries({ queryKey: ["returns"] });
+      toast.success("تم تسجيل المرتجع الجزئي بنجاح");
+      setPartialReturnDialogOpen(false);
+      setSelectedOrderForReturn(null);
+      setReturnItems([]);
+      setReturnNotes("");
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "حدث خطأ أثناء تسجيل المرتجع");
+    }
+  });
+
+  const updateReturnQuantity = (index: number, quantity: number) => {
+    const maxQty = returnItems[index].total_quantity;
+    const newQty = Math.min(Math.max(0, quantity), maxQty);
+    setReturnItems(prev => prev.map((item, i) => 
+      i === index ? { ...item, returned_quantity: newQty } : item
+    ));
+  };
+
+  const calculateTotalReturn = () => {
+    return returnItems.reduce((sum, item) => sum + (item.returned_quantity * item.price), 0);
+  };
 
   const filteredOrders = orders?.filter(order => {
     if (statusFilter !== "all" && order.status !== statusFilter) return false;
@@ -419,6 +568,88 @@ const AllOrders = () => {
             )}
           </CardContent>
         </Card>
+
+        {/* Partial Return Dialog */}
+        <Dialog open={partialReturnDialogOpen} onOpenChange={setPartialReturnDialogOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <PackageX className="h-5 w-5 text-orange-500" />
+                مرتجع جزئي - أوردر #{selectedOrderForReturn?.order_number || selectedOrderForReturn?.id?.slice(0, 8)}
+              </DialogTitle>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              <div className="bg-muted/50 p-3 rounded-lg">
+                <p className="text-sm text-muted-foreground">
+                  حدد عدد القطع المرتجعة لكل منتج. سيتم خصم قيمتها من المندوب تلقائياً.
+                </p>
+              </div>
+
+              <div className="space-y-3 max-h-64 overflow-y-auto">
+                {returnItems.map((item, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div className="flex-1">
+                      <p className="font-medium text-sm">{item.product_name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        الكمية الأصلية: {item.total_quantity} | السعر: {item.price.toFixed(2)} ج.م
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Label className="text-xs">المرتجع:</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={item.total_quantity}
+                        value={item.returned_quantity}
+                        onChange={(e) => updateReturnQuantity(index, parseInt(e.target.value) || 0)}
+                        className="w-20 text-center"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="border-t pt-4">
+                <div className="flex justify-between items-center mb-3">
+                  <span className="font-bold">إجمالي المرتجع:</span>
+                  <span className="text-lg font-bold text-orange-600">
+                    {calculateTotalReturn().toFixed(2)} ج.م
+                  </span>
+                </div>
+                
+                {selectedOrderForReturn?.delivery_agent_id && (
+                  <p className="text-sm text-muted-foreground mb-3">
+                    سيتم خصم هذا المبلغ من مستحقات المندوب: {selectedOrderForReturn?.delivery_agents?.name}
+                  </p>
+                )}
+                
+                <div>
+                  <Label>ملاحظات (اختياري)</Label>
+                  <Textarea
+                    value={returnNotes}
+                    onChange={(e) => setReturnNotes(e.target.value)}
+                    placeholder="سبب الإرجاع أو ملاحظات إضافية"
+                    rows={2}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button variant="ghost" onClick={() => setPartialReturnDialogOpen(false)}>
+                إلغاء
+              </Button>
+              <Button 
+                onClick={() => partialReturnMutation.mutate()}
+                disabled={calculateTotalReturn() === 0 || partialReturnMutation.isPending}
+                className="bg-orange-500 hover:bg-orange-600"
+              >
+                {partialReturnMutation.isPending ? "جاري التسجيل..." : "تأكيد المرتجع"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
