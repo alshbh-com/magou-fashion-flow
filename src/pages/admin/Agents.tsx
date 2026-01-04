@@ -374,23 +374,35 @@ const Agents = () => {
                             <TableRow>
                               <TableHead>رقم الطلب</TableHead>
                               <TableHead>الحالة</TableHead>
-                              <TableHead>إجمالي</TableHead>
+                              <TableHead>سعر المنتج</TableHead>
+                              <TableHead>شحن العميل</TableHead>
+                              <TableHead>الإجمالي للعميل</TableHead>
                               <TableHead>شحن المندوب</TableHead>
-                              <TableHead>الصافي</TableHead>
+                              <TableHead>المطلوب من المندوب</TableHead>
                               <TableHead>التاريخ</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {agentOrders?.map((o: any) => (
-                              <TableRow key={o.id}>
-                                <TableCell>{o.order_number ?? "-"}</TableCell>
-                                <TableCell>{o.status}</TableCell>
-                                <TableCell>{Number(o.total_amount).toFixed(2)}</TableCell>
-                                <TableCell>{Number(o.shipping_cost || 0).toFixed(2)}</TableCell>
-                                <TableCell>{(Number(o.total_amount) - Number(o.shipping_cost || 0)).toFixed(2)}</TableCell>
-                                <TableCell>{new Date(o.created_at).toLocaleDateString("ar-EG")}</TableCell>
-                              </TableRow>
-                            ))}
+                            {agentOrders?.map((o: any) => {
+                              const productAmount = parseFloat(o.total_amount?.toString() || "0");
+                              const customerShipping = parseFloat(o.shipping_cost?.toString() || "0");
+                              const agentShipping = parseFloat(o.agent_shipping_cost?.toString() || "0");
+                              const totalForCustomer = productAmount + customerShipping;
+                              const amountFromAgent = totalForCustomer - agentShipping;
+                              
+                              return (
+                                <TableRow key={o.id}>
+                                  <TableCell>{o.order_number ?? "-"}</TableCell>
+                                  <TableCell>{o.status}</TableCell>
+                                  <TableCell>{productAmount.toFixed(2)}</TableCell>
+                                  <TableCell>{customerShipping.toFixed(2)}</TableCell>
+                                  <TableCell className="font-medium">{totalForCustomer.toFixed(2)}</TableCell>
+                                  <TableCell>{agentShipping.toFixed(2)}</TableCell>
+                                  <TableCell className="font-bold text-primary">{amountFromAgent.toFixed(2)}</TableCell>
+                                  <TableCell>{new Date(o.created_at).toLocaleDateString("ar-EG")}</TableCell>
+                                </TableRow>
+                              );
+                            })}
                           </TableBody>
                         </Table>
                       </div>

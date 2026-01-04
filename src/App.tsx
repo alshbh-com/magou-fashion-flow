@@ -22,6 +22,7 @@ import AllOrders from "./pages/admin/AllOrders";
 import ResetData from "./pages/admin/ResetData";
 import UserManagement from "./pages/admin/UserManagement";
 import ActivityLogs from "./pages/admin/ActivityLogs";
+import Treasury from "./pages/admin/Treasury";
 import BottomNav from "./components/BottomNav";
 import TopNav from "./components/TopNav";
 import NotFound from "./pages/NotFound";
@@ -56,6 +57,7 @@ const App = () => (
               <Route path="/admin/reset-data" element={<ResetData />} />
               <Route path="/admin/users" element={<UserManagement />} />
               <Route path="/admin/activity" element={<ActivityLogs />} />
+              <Route path="/admin/treasury" element={<Treasury />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

@@ -40,6 +40,7 @@ const AgentOrders = () => {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
+  const [singleDateFilter, setSingleDateFilter] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
@@ -114,11 +115,17 @@ const AgentOrders = () => {
 
   const filteredOrders = orders?.filter(order => {
     if (statusFilter !== "all" && order.status !== statusFilter) return false;
-    if (startDate || endDate) {
+    
+    // Single date filter (priority)
+    if (singleDateFilter) {
+      const orderDate = new Date(order.created_at).toISOString().split('T')[0];
+      if (orderDate !== singleDateFilter) return false;
+    } else if (startDate || endDate) {
       const orderDate = new Date(order.created_at).toISOString().split('T')[0];
       if (startDate && orderDate < startDate) return false;
       if (endDate && orderDate > endDate) return false;
     }
+    
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       const orderNumber = order.order_number?.toString() || "";
@@ -760,11 +767,34 @@ const AgentOrders = () => {
                       </Select>
                     </div>
                     <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">تاريخ محدد:</span>
+                      <Input
+                        type="date"
+                        value={singleDateFilter}
+                        onChange={(e) => {
+                          setSingleDateFilter(e.target.value);
+                          if (e.target.value) {
+                            setStartDate("");
+                            setEndDate("");
+                          }
+                        }}
+                        className="w-40"
+                      />
+                      {singleDateFilter && (
+                        <Button size="sm" variant="ghost" onClick={() => setSingleDateFilter("")}>
+                          إلغاء
+                        </Button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">من تاريخ:</span>
                       <Input
                         type="date"
                         value={startDate}
-                        onChange={(e) => setStartDate(e.target.value)}
+                        onChange={(e) => {
+                          setStartDate(e.target.value);
+                          setSingleDateFilter("");
+                        }}
                         className="w-40"
                       />
                     </div>
@@ -773,7 +803,10 @@ const AgentOrders = () => {
                       <Input
                         type="date"
                         value={endDate}
-                        onChange={(e) => setEndDate(e.target.value)}
+                        onChange={(e) => {
+                          setEndDate(e.target.value);
+                          setSingleDateFilter("");
+                        }}
                         className="w-40"
                       />
                     </div>
