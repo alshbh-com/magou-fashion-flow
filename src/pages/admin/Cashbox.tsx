@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { 
   Plus, ArrowLeft, TrendingUp, TrendingDown, Wallet, Calendar, 
-  Lock, ShieldCheck, FileText
+  Lock, ShieldCheck, FileText, Trash2
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -39,7 +39,8 @@ const Cashbox = () => {
   const [selectedCashboxId, setSelectedCashboxId] = useState<string>("");
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
-  const [pendingAction, setPendingAction] = useState<"transaction" | "cashbox" | null>(null);
+  const [pendingAction, setPendingAction] = useState<"transaction" | "cashbox" | "delete" | null>(null);
+  const [cashboxToDelete, setCashboxToDelete] = useState<string | null>(null);
   
   const [transactionForm, setTransactionForm] = useState({
     type: "income" as "income" | "expense",
@@ -167,6 +168,28 @@ const Cashbox = () => {
     }
   });
 
+  // Delete cashbox mutation
+  const deleteCashboxMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("cashbox")
+        .update({ is_active: false })
+        .eq("id", id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cashboxes"] });
+      toast.success("تم حذف الخزنة بنجاح");
+      logActivity('حذف خزنة', 'cashbox', { cashbox_id: cashboxToDelete });
+      setSelectedCashboxId("");
+      setCashboxToDelete(null);
+    },
+    onError: () => {
+      toast.error("حدث خطأ أثناء حذف الخزنة");
+    }
+  });
+
   // Create transaction mutation
   const createTransactionMutation = useMutation({
     mutationFn: async (data: typeof transactionForm) => {
@@ -236,12 +259,17 @@ const Cashbox = () => {
       setAddTransactionOpen(true);
     } else if (pendingAction === "cashbox") {
       setCreateCashboxOpen(true);
+    } else if (pendingAction === "delete" && cashboxToDelete) {
+      deleteCashboxMutation.mutate(cashboxToDelete);
     }
     setPendingAction(null);
   };
 
-  const openWithPassword = (action: "transaction" | "cashbox") => {
+  const openWithPassword = (action: "transaction" | "cashbox" | "delete", cashboxId?: string) => {
     setPendingAction(action);
+    if (action === "delete" && cashboxId) {
+      setCashboxToDelete(cashboxId);
+    }
     setPasswordDialogOpen(true);
   };
 
@@ -327,15 +355,26 @@ const Cashbox = () => {
             ) : (
               <div className="flex flex-wrap gap-3">
                 {cashboxes.map((cashbox: any) => (
-                  <Button
-                    key={cashbox.id}
-                    variant={selectedCashboxId === cashbox.id ? "default" : "outline"}
-                    onClick={() => setSelectedCashboxId(cashbox.id)}
-                    className="flex items-center gap-2"
-                  >
-                    <Wallet className="h-4 w-4" />
-                    {cashbox.name}
-                  </Button>
+                  <div key={cashbox.id} className="flex items-center gap-1">
+                    <Button
+                      variant={selectedCashboxId === cashbox.id ? "default" : "outline"}
+                      onClick={() => setSelectedCashboxId(cashbox.id)}
+                      className="flex items-center gap-2"
+                    >
+                      <Wallet className="h-4 w-4" />
+                      {cashbox.name}
+                    </Button>
+                    {canEditCashbox && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                        onClick={() => openWithPassword("delete", cashbox.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
                 ))}
               </div>
             )}
@@ -543,11 +582,11 @@ const Cashbox = () => {
                           <TableRow key={transaction.id}>
                             <TableCell>
                               <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-sm font-medium ${
-                                transaction.type === 'deposit' 
+                                transaction.type === 'income' 
                                   ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' 
                                   : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
                               }`}>
-                                {transaction.type === 'deposit' ? (
+                                {transaction.type === 'income' ? (
                                   <><TrendingUp className="h-3 w-3" /> دخل</>
                                 ) : (
                                   <><TrendingDown className="h-3 w-3" /> خرج</>
@@ -555,9 +594,9 @@ const Cashbox = () => {
                               </span>
                             </TableCell>
                             <TableCell className={`font-bold ${
-                              transaction.type === 'deposit' ? 'text-green-600' : 'text-red-600'
+                              transaction.type === 'income' ? 'text-green-600' : 'text-red-600'
                             }`}>
-                              {transaction.type === 'deposit' ? '+' : '-'}
+                              {transaction.type === 'income' ? '+' : '-'}
                               {parseFloat(transaction.amount).toFixed(2)} ج.م
                             </TableCell>
                             <TableCell>
