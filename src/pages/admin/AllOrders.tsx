@@ -88,8 +88,8 @@ const AllOrders = () => {
       delivered: "bg-green-500",
       cancelled: "bg-red-500",
       returned: "bg-orange-500",
-      partially_returned: "bg-orange-400",
-      delivered_with_modification: "bg-teal-500"
+      delivered_with_modification: "bg-teal-500",
+      return_no_shipping: "bg-orange-400"
     };
     return colors[status] || "bg-gray-500";
   };
@@ -102,7 +102,6 @@ const AllOrders = () => {
       delivered: "تم التوصيل",
       cancelled: "ملغي",
       returned: "مرتجع",
-      partially_returned: "مرتجع جزئي",
       delivered_with_modification: "تم التوصيل مع التعديل",
       return_no_shipping: "مرتجع دون شحن"
     };
@@ -114,15 +113,6 @@ const AllOrders = () => {
       orderId: string; 
       newStatus: string; 
     }) => {
-      // For partial return, open dialog instead of direct update
-      if (newStatus === 'partially_returned') {
-        const order = orders?.find(o => o.id === orderId);
-        if (order) {
-          openPartialReturnDialog(order);
-        }
-        return;
-      }
-      
       // Database trigger handles all agent payment logic automatically
       const { error } = await supabase
         .from("orders")
@@ -133,6 +123,7 @@ const AllOrders = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["all-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["orders"] });
       queryClient.invalidateQueries({ queryKey: ["agent-orders"] });
       queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
       queryClient.invalidateQueries({ queryKey: ["agent_payments"] });
@@ -536,9 +527,9 @@ const AllOrders = () => {
                                       <SelectItem value="processing">قيد التنفيذ</SelectItem>
                                       <SelectItem value="shipped">تم الشحن</SelectItem>
                                       <SelectItem value="delivered">تم التوصيل</SelectItem>
+                                      <SelectItem value="delivered_with_modification">تم التوصيل مع التعديل</SelectItem>
                                       <SelectItem value="cancelled">ملغي</SelectItem>
                                       <SelectItem value="returned">مرتجع</SelectItem>
-                                      <SelectItem value="partially_returned">مرتجع جزئي</SelectItem>
                                       <SelectItem value="return_no_shipping">مرتجع دون شحن</SelectItem>
                                     </SelectContent>
                                   </Select>
