@@ -9,10 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Plus, ArrowLeft, TrendingUp, TrendingDown, Wallet, Calendar, 
-  Lock, ShieldCheck, AlertTriangle, FileText
+  Lock, ShieldCheck, FileText
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -26,6 +25,8 @@ const TRANSACTION_REASONS = [
   { value: 'manual', label: 'يدوي' }
 ];
 
+const ADMIN_PASSWORD = "Magdi17121997";
+
 const Cashbox = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -36,9 +37,12 @@ const Cashbox = () => {
   const [dateFilter, setDateFilter] = useState<string>("");
   const [monthFilter, setMonthFilter] = useState<string>("");
   const [selectedCashboxId, setSelectedCashboxId] = useState<string>("");
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [pendingAction, setPendingAction] = useState<"transaction" | "cashbox" | null>(null);
   
   const [transactionForm, setTransactionForm] = useState({
-    type: "deposit" as "deposit" | "withdrawal",
+    type: "income" as "income" | "expense",
     amount: "",
     reason: "manual",
     description: ""
@@ -123,16 +127,16 @@ const Cashbox = () => {
       
       if (transError) throw transError;
       
-      const deposits = allTransactions?.filter(t => t.type === 'deposit').reduce((sum, t) => sum + parseFloat(t.amount.toString()), 0) || 0;
-      const withdrawals = allTransactions?.filter(t => t.type === 'withdrawal').reduce((sum, t) => sum + parseFloat(t.amount.toString()), 0) || 0;
+      const income = allTransactions?.filter(t => t.type === 'income').reduce((sum, t) => sum + parseFloat(t.amount.toString()), 0) || 0;
+      const expenses = allTransactions?.filter(t => t.type === 'expense').reduce((sum, t) => sum + parseFloat(t.amount.toString()), 0) || 0;
       const openingBalance = parseFloat(cashbox.opening_balance?.toString() || "0");
       
       return {
         name: cashbox.name,
         openingBalance,
-        deposits,
-        withdrawals,
-        currentBalance: openingBalance + deposits - withdrawals
+        income,
+        expenses,
+        currentBalance: openingBalance + income - expenses
       };
     },
     enabled: !!selectedCashboxId
@@ -185,15 +189,16 @@ const Cashbox = () => {
       queryClient.invalidateQueries({ queryKey: ["cashbox-balance"] });
       toast.success("تم إضافة الحركة بنجاح");
       logActivity(
-        transactionForm.type === 'deposit' ? 'إيداع في الخزنة' : 'سحب من الخزنة', 
+        transactionForm.type === 'income' ? 'إيداع في الخزنة' : 'سحب من الخزنة', 
         'cashbox', 
         { amount: transactionForm.amount, reason: transactionForm.reason }
       );
       setAddTransactionOpen(false);
-      setTransactionForm({ type: "deposit", amount: "", reason: "manual", description: "" });
+      setTransactionForm({ type: "income", amount: "", reason: "manual", description: "" });
     },
-    onError: () => {
-      toast.error("حدث خطأ");
+    onError: (error: any) => {
+      console.error('Transaction error:', error);
+      toast.error("حدث خطأ أثناء إضافة الحركة");
     }
   });
 
@@ -217,6 +222,27 @@ const Cashbox = () => {
       return;
     }
     createTransactionMutation.mutate(transactionForm);
+  };
+
+  const handlePasswordSubmit = () => {
+    if (passwordInput !== ADMIN_PASSWORD) {
+      toast.error("كلمة السر غير صحيحة");
+      logActivity('محاولة دخول فاشلة للخزنة', 'cashbox', { action: pendingAction });
+      return;
+    }
+    setPasswordDialogOpen(false);
+    setPasswordInput("");
+    if (pendingAction === "transaction") {
+      setAddTransactionOpen(true);
+    } else if (pendingAction === "cashbox") {
+      setCreateCashboxOpen(true);
+    }
+    setPendingAction(null);
+  };
+
+  const openWithPassword = (action: "transaction" | "cashbox") => {
+    setPendingAction(action);
+    setPasswordDialogOpen(true);
   };
 
   const getReasonLabel = (reason: string) => {
@@ -258,14 +284,13 @@ const Cashbox = () => {
               الخزنات
             </CardTitle>
             {canEditCashbox && (
-              <Dialog open={createCashboxOpen} onOpenChange={setCreateCashboxOpen}>
-                <DialogTrigger asChild>
-                  <Button>
-                    <Plus className="ml-2 h-4 w-4" />
-                    إنشاء خزنة
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
+              <>
+                <Button onClick={() => openWithPassword("cashbox")}>
+                  <Plus className="ml-2 h-4 w-4" />
+                  إنشاء خزنة
+                </Button>
+                <Dialog open={createCashboxOpen} onOpenChange={setCreateCashboxOpen}>
+                  <DialogContent>
                   <DialogHeader>
                     <DialogTitle>إنشاء خزنة جديدة</DialogTitle>
                   </DialogHeader>
@@ -291,8 +316,9 @@ const Cashbox = () => {
                     </div>
                     <Button type="submit" className="w-full">إنشاء</Button>
                   </form>
-                </DialogContent>
-              </Dialog>
+                  </DialogContent>
+                </Dialog>
+              </>
             )}
           </CardHeader>
           <CardContent>
@@ -340,7 +366,7 @@ const Cashbox = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-green-600">
-                    +{cashboxBalance.deposits.toFixed(2)} ج.م
+                    +{cashboxBalance.income.toFixed(2)} ج.م
                   </div>
                 </CardContent>
               </Card>
@@ -352,7 +378,7 @@ const Cashbox = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-red-600">
-                    -{cashboxBalance.withdrawals.toFixed(2)} ج.م
+                    -{cashboxBalance.expenses.toFixed(2)} ج.م
                   </div>
                 </CardContent>
               </Card>
@@ -420,14 +446,13 @@ const Cashbox = () => {
                   )}
 
                   {canEditCashbox && (
-                    <Dialog open={addTransactionOpen} onOpenChange={setAddTransactionOpen}>
-                      <DialogTrigger asChild>
-                        <Button>
-                          <Plus className="ml-2 h-4 w-4" />
-                          إضافة حركة
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
+                    <>
+                      <Button onClick={() => openWithPassword("transaction")}>
+                        <Plus className="ml-2 h-4 w-4" />
+                        إضافة حركة
+                      </Button>
+                      <Dialog open={addTransactionOpen} onOpenChange={setAddTransactionOpen}>
+                        <DialogContent>
                         <DialogHeader>
                           <DialogTitle>إضافة حركة جديدة</DialogTitle>
                         </DialogHeader>
@@ -436,14 +461,14 @@ const Cashbox = () => {
                             <Label>نوع الحركة</Label>
                             <Select 
                               value={transactionForm.type} 
-                              onValueChange={(v) => setTransactionForm({...transactionForm, type: v as "deposit" | "withdrawal"})}
+                              onValueChange={(v) => setTransactionForm({...transactionForm, type: v as "income" | "expense"})}
                             >
                               <SelectTrigger>
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="deposit">دخل (إيداع)</SelectItem>
-                                <SelectItem value="withdrawal">خرج (سحب)</SelectItem>
+                                <SelectItem value="income">دخل (إيداع)</SelectItem>
+                                <SelectItem value="expense">خرج (سحب)</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -489,8 +514,9 @@ const Cashbox = () => {
                             إضافة الحركة
                           </Button>
                         </form>
-                      </DialogContent>
-                    </Dialog>
+                        </DialogContent>
+                      </Dialog>
+                    </>
                   )}
                 </div>
               </CardHeader>
@@ -559,6 +585,33 @@ const Cashbox = () => {
             </Card>
           </>
         )}
+
+        {/* Password Dialog */}
+        <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Lock className="h-5 w-5" />
+                التحقق من كلمة السر
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                أدخل كلمة السر الإدارية للوصول لهذه الميزة
+              </p>
+              <Input
+                type="password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                placeholder="كلمة السر"
+                onKeyDown={(e) => e.key === "Enter" && handlePasswordSubmit()}
+              />
+              <Button onClick={handlePasswordSubmit} className="w-full">
+                تأكيد
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
