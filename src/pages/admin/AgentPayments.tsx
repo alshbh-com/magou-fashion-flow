@@ -82,14 +82,17 @@ const AgentPayments = () => {
       const manualPayments = allPaymentsForTotals?.filter(p => p.payment_type === 'payment') || [];
       const deliveredPayments = allPaymentsForTotals?.filter(p => p.payment_type === 'delivered') || [];
       const deliveredResets = allPaymentsForTotals?.filter(p => p.payment_type === 'delivered_reset') || [];
+      const returnPayments = allPaymentsForTotals?.filter(p => p.payment_type === 'return') || [];
 
       const totalOwed = owedPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
       const totalPaid = manualPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
       const totalDelivered = deliveredPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
       const deliveredReset = deliveredResets.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0);
+      // المبالغ المرتجعة (سالبة في قاعدة البيانات)
+      const totalReturns = returnPayments.reduce((sum, p) => sum + Math.abs(parseFloat(p.amount.toString())), 0);
 
-      // مستحقات على المندوب = المطلوب منه - المسلم - المدفوع مقدماً
-      const agentReceivables = Math.max(0, totalOwed - totalDelivered - totalPaid);
+      // مستحقات على المندوب = المطلوب منه - المسلم - المدفوع مقدماً - المرتجعات
+      const agentReceivables = totalOwed - totalDelivered - totalPaid - totalReturns;
       const totalDeliveredNet = Math.max(0, totalDelivered - deliveredReset);
 
       return {
@@ -100,6 +103,7 @@ const AgentPayments = () => {
         deliveredReset,
         totalOwed,
         agentReceivables,
+        totalReturns,
       };
     },
     enabled: !!selectedAgentId,
@@ -413,11 +417,20 @@ const AgentPayments = () => {
               <Card className="mb-6 bg-accent">
                 <CardContent className="p-6">
                   <h3 className="font-bold text-lg mb-3">{selectedAgent.name}</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div>
                       <p className="text-sm text-muted-foreground">مستحقات على المندوب</p>
-                      <p className="text-2xl font-bold text-primary">
+                      <p className={`text-2xl font-bold ${agentData.agentReceivables >= 0 ? 'text-primary' : 'text-red-600'}`}>
                         {agentData.agentReceivables.toFixed(2)} ج.م
+                      </p>
+                      {agentData.agentReceivables < 0 && (
+                        <p className="text-xs text-red-500 mt-1">المندوب له رصيد عندك</p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">باقي من المرتجع</p>
+                      <p className="text-2xl font-bold text-orange-600">
+                        {agentData.totalReturns.toFixed(2)} ج.م
                       </p>
                     </div>
                     <div>

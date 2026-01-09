@@ -268,8 +268,18 @@ const AllOrders = () => {
       return false;
     }
     if (searchQuery) {
+      const query = searchQuery.toLowerCase();
       const orderNumber = order.order_number?.toString() || "";
-      if (!orderNumber.includes(searchQuery)) return false;
+      const customerName = order.customers?.name?.toLowerCase() || "";
+      const customerPhone = order.customers?.phone || "";
+      const customerPhone2 = (order.customers as any)?.phone2 || "";
+      
+      if (!orderNumber.includes(query) && 
+          !customerName.includes(query) && 
+          !customerPhone.includes(query) &&
+          !customerPhone2.includes(query)) {
+        return false;
+      }
     }
     return true;
   });
@@ -291,13 +301,13 @@ const AllOrders = () => {
             <CardTitle>جميع الأوردرات</CardTitle>
             <div className="sticky top-16 z-10 bg-card pt-4 pb-2 flex items-center gap-4 flex-wrap">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">بحث برقم الأوردر:</span>
+                <span className="text-sm font-medium">بحث:</span>
                 <Input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="رقم الأوردر"
-                  className="w-48"
+                  placeholder="رقم الأوردر / الاسم / الهاتف"
+                  className="w-64"
                 />
               </div>
               <div className="flex items-center gap-2">
