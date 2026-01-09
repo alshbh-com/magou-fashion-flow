@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Trash2, Plus, ArrowLeft, Pencil, Calendar } from "lucide-react";
+import { Trash2, Plus, ArrowLeft, Pencil, Calendar, RefreshCw } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -25,6 +25,9 @@ const AgentPayments = () => {
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [editingPayment, setEditingPayment] = useState<any>(null);
   const [dateFilter, setDateFilter] = useState<string>("");
+  
+  // State for editing summary values
+  const [editingSummary, setEditingSummary] = useState<{type: string; value: string} | null>(null);
   
   const [formData, setFormData] = useState({
     amount: "",
@@ -83,6 +86,7 @@ const AgentPayments = () => {
       const deliveredPayments = allPaymentsForTotals?.filter(p => p.payment_type === 'delivered') || [];
       const deliveredResets = allPaymentsForTotals?.filter(p => p.payment_type === 'delivered_reset') || [];
       const returnPayments = allPaymentsForTotals?.filter(p => p.payment_type === 'return') || [];
+      const returnResets = allPaymentsForTotals?.filter(p => p.payment_type === 'return_reset') || [];
 
       const totalOwed = owedPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
       const totalPaid = manualPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
@@ -90,6 +94,10 @@ const AgentPayments = () => {
       const deliveredReset = deliveredResets.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0);
       // المبالغ المرتجعة (سالبة في قاعدة البيانات)
       const totalReturns = returnPayments.reduce((sum, p) => sum + Math.abs(parseFloat(p.amount.toString())), 0);
+      const totalReturnResets = returnResets.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0);
+
+      // باقي من المرتجع = إجمالي المرتجعات - ما تم تصفيره
+      const remainingReturns = Math.max(0, totalReturns - totalReturnResets);
 
       // مستحقات على المندوب = المطلوب منه - المسلم - المدفوع مقدماً - المرتجعات
       const agentReceivables = totalOwed - totalDelivered - totalPaid - totalReturns;
@@ -104,6 +112,7 @@ const AgentPayments = () => {
         totalOwed,
         agentReceivables,
         totalReturns,
+        remainingReturns,
       };
     },
     enabled: !!selectedAgentId,
@@ -160,6 +169,32 @@ const AgentPayments = () => {
       queryClient.invalidateQueries({ queryKey: ["agent_orders_summary"] });
       toast.success("تم إعادة التعيين بنجاح");
       logActivity('إعادة تعيين المسلم', 'agent_payments', { agentId: selectedAgentId });
+    },
+    onError: () => {
+      toast.error("حدث خطأ أثناء إعادة التعيين");
+    }
+  });
+
+  const resetReturnsMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
+      
+      const { error } = await supabase
+        .from("agent_payments")
+        .insert({
+          delivery_agent_id: selectedAgentId,
+          amount: (agentData?.remainingReturns || 0),
+          payment_type: "return_reset",
+          notes: "إعادة تعيين - تصفير باقي من المرتجع"
+        });
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
+      queryClient.invalidateQueries({ queryKey: ["agent_orders_summary"] });
+      toast.success("تم إعادة تعيين باقي المرتجع بنجاح");
+      logActivity('إعادة تعيين باقي المرتجع', 'agent_payments', { agentId: selectedAgentId });
     },
     onError: () => {
       toast.error("حدث خطأ أثناء إعادة التعيين");
@@ -240,6 +275,39 @@ const AgentPayments = () => {
     }
   });
 
+  // Mutation for updating summary values (adding adjustment payment)
+  const adjustSummaryMutation = useMutation({
+    mutationFn: async ({ type, newValue, currentValue }: { type: string; newValue: number; currentValue: number }) => {
+      if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
+      
+      const difference = newValue - currentValue;
+      if (difference === 0) return;
+
+      const paymentType = type === 'receivables' ? 'owed' : 
+                         type === 'delivered' ? 'delivered' : 
+                         type === 'advance' ? 'payment' : 'return';
+
+      const { error } = await supabase
+        .from("agent_payments")
+        .insert({
+          delivery_agent_id: selectedAgentId,
+          amount: Math.abs(difference),
+          payment_type: paymentType,
+          notes: `تعديل يدوي - ${difference > 0 ? 'إضافة' : 'خصم'} ${Math.abs(difference)} ج.م`
+        });
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
+      toast.success("تم التعديل بنجاح");
+      setEditingSummary(null);
+    },
+    onError: () => {
+      toast.error("حدث خطأ أثناء التعديل");
+    }
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase
@@ -289,6 +357,35 @@ const AgentPayments = () => {
       notes: payment.notes || ""
     });
     setEditOpen(true);
+  };
+
+  const handleSummaryEdit = (type: string, currentValue: number) => {
+    if (!canEditPayments) return;
+    setEditingSummary({ type, value: currentValue.toString() });
+  };
+
+  const handleSummarySubmit = () => {
+    if (!editingSummary) return;
+    
+    const newValue = parseFloat(editingSummary.value);
+    let currentValue = 0;
+    
+    switch (editingSummary.type) {
+      case 'receivables':
+        currentValue = agentData?.agentReceivables || 0;
+        break;
+      case 'returns':
+        currentValue = agentData?.remainingReturns || 0;
+        break;
+      case 'delivered':
+        currentValue = agentData?.totalDeliveredNet || 0;
+        break;
+      case 'advance':
+        currentValue = agentData?.totalPaid || 0;
+        break;
+    }
+
+    adjustSummaryMutation.mutate({ type: editingSummary.type, newValue, currentValue });
   };
 
   const selectedAgent = agents?.find(a => a.id === selectedAgentId);
@@ -417,30 +514,104 @@ const AgentPayments = () => {
               <Card className="mb-6 bg-accent">
                 <CardContent className="p-6">
                   <h3 className="font-bold text-lg mb-3">{selectedAgent.name}</h3>
+                  <p className="text-xs text-muted-foreground mb-4">اضغط على أي قيمة لتعديلها</p>
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div>
+                    {/* مستحقات على المندوب */}
+                    <div 
+                      className={`p-3 rounded-lg transition-colors ${canEditPayments ? 'cursor-pointer hover:bg-primary/10' : ''}`}
+                      onClick={() => handleSummaryEdit('receivables', agentData.agentReceivables)}
+                    >
                       <p className="text-sm text-muted-foreground">مستحقات على المندوب</p>
-                      <p className={`text-2xl font-bold ${agentData.agentReceivables >= 0 ? 'text-primary' : 'text-red-600'}`}>
-                        {agentData.agentReceivables.toFixed(2)} ج.م
-                      </p>
-                      {agentData.agentReceivables < 0 && (
-                        <p className="text-xs text-red-500 mt-1">المندوب له رصيد عندك</p>
+                      {editingSummary?.type === 'receivables' ? (
+                        <div className="flex gap-2 mt-1">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={editingSummary.value}
+                            onChange={(e) => setEditingSummary({...editingSummary, value: e.target.value})}
+                            className="h-8"
+                            autoFocus
+                          />
+                          <Button size="sm" onClick={handleSummarySubmit}>حفظ</Button>
+                          <Button size="sm" variant="ghost" onClick={() => setEditingSummary(null)}>إلغاء</Button>
+                        </div>
+                      ) : (
+                        <>
+                          <p className={`text-2xl font-bold ${agentData.agentReceivables >= 0 ? 'text-primary' : 'text-red-600'}`}>
+                            {agentData.agentReceivables.toFixed(2)} ج.م
+                          </p>
+                          {agentData.agentReceivables < 0 && (
+                            <p className="text-xs text-red-500 mt-1">المندوب له رصيد عندك</p>
+                          )}
+                        </>
                       )}
                     </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">باقي من المرتجع</p>
-                      <p className="text-2xl font-bold text-orange-600">
-                        {agentData.totalReturns.toFixed(2)} ج.م
-                      </p>
+
+                    {/* باقي من المرتجع */}
+                    <div className="p-3 rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-sm text-muted-foreground">باقي من المرتجع</p>
+                        {canEditPayments && agentData.remainingReturns > 0 && (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="outline" size="sm" className="h-6 px-2">
+                                <RefreshCw className="h-3 w-3 ml-1" />
+                                تصفير
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>تأكيد إعادة التعيين</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  سيتم تصفير باقي من المرتجع ({agentData.remainingReturns.toFixed(2)} ج.م)
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => resetReturnsMutation.mutate()}>
+                                  تأكيد
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        )}
+                      </div>
+                      <div 
+                        className={`${canEditPayments ? 'cursor-pointer hover:opacity-80' : ''}`}
+                        onClick={() => handleSummaryEdit('returns', agentData.remainingReturns)}
+                      >
+                        {editingSummary?.type === 'returns' ? (
+                          <div className="flex gap-2">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={editingSummary.value}
+                              onChange={(e) => setEditingSummary({...editingSummary, value: e.target.value})}
+                              className="h-8"
+                              autoFocus
+                            />
+                            <Button size="sm" onClick={handleSummarySubmit}>حفظ</Button>
+                            <Button size="sm" variant="ghost" onClick={() => setEditingSummary(null)}>إلغاء</Button>
+                          </div>
+                        ) : (
+                          <p className="text-2xl font-bold text-orange-600">
+                            {agentData.remainingReturns.toFixed(2)} ج.م
+                          </p>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">إجمالي المرتجعات: {agentData.totalReturns.toFixed(2)} ج.م</p>
                     </div>
-                    <div>
+
+                    {/* إجمالي الطلبات المسلمة */}
+                    <div className="p-3 rounded-lg">
                       <div className="flex items-center justify-between mb-2">
                         <p className="text-sm text-muted-foreground">إجمالي الطلبات المسلمة</p>
                         {canEditPayments && (
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
-                              <Button variant="outline" size="sm">
-                                إعادة تعيين
+                              <Button variant="outline" size="sm" className="h-6 px-2">
+                                <RefreshCw className="h-3 w-3 ml-1" />
+                                تصفير
                               </Button>
                             </AlertDialogTrigger>
                             <AlertDialogContent>
@@ -460,18 +631,41 @@ const AgentPayments = () => {
                           </AlertDialog>
                         )}
                       </div>
-                      <p className="text-2xl font-bold text-blue-600">
-                        {agentData.totalDeliveredNet.toFixed(2)} ج.م
-                      </p>
+                      <div 
+                        className={`${canEditPayments ? 'cursor-pointer hover:opacity-80' : ''}`}
+                        onClick={() => handleSummaryEdit('delivered', agentData.totalDeliveredNet)}
+                      >
+                        {editingSummary?.type === 'delivered' ? (
+                          <div className="flex gap-2">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={editingSummary.value}
+                              onChange={(e) => setEditingSummary({...editingSummary, value: e.target.value})}
+                              className="h-8"
+                              autoFocus
+                            />
+                            <Button size="sm" onClick={handleSummarySubmit}>حفظ</Button>
+                            <Button size="sm" variant="ghost" onClick={() => setEditingSummary(null)}>إلغاء</Button>
+                          </div>
+                        ) : (
+                          <p className="text-2xl font-bold text-blue-600">
+                            {agentData.totalDeliveredNet.toFixed(2)} ج.م
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <div>
+
+                    {/* دفعة مقدمة */}
+                    <div className="p-3 rounded-lg">
                       <div className="flex items-center justify-between mb-2">
                         <p className="text-sm text-muted-foreground">دفعة مقدمة</p>
                         {canEditPayments && (
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
-                              <Button variant="outline" size="sm">
-                                إعادة تعيين
+                              <Button variant="outline" size="sm" className="h-6 px-2">
+                                <RefreshCw className="h-3 w-3 ml-1" />
+                                تصفير
                               </Button>
                             </AlertDialogTrigger>
                             <AlertDialogContent>
@@ -491,9 +685,29 @@ const AgentPayments = () => {
                           </AlertDialog>
                         )}
                       </div>
-                      <p className="text-2xl font-bold text-green-600">
-                        {agentData.totalPaid.toFixed(2)} ج.م
-                      </p>
+                      <div 
+                        className={`${canEditPayments ? 'cursor-pointer hover:opacity-80' : ''}`}
+                        onClick={() => handleSummaryEdit('advance', agentData.totalPaid)}
+                      >
+                        {editingSummary?.type === 'advance' ? (
+                          <div className="flex gap-2">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={editingSummary.value}
+                              onChange={(e) => setEditingSummary({...editingSummary, value: e.target.value})}
+                              className="h-8"
+                              autoFocus
+                            />
+                            <Button size="sm" onClick={handleSummarySubmit}>حفظ</Button>
+                            <Button size="sm" variant="ghost" onClick={() => setEditingSummary(null)}>إلغاء</Button>
+                          </div>
+                        ) : (
+                          <p className="text-2xl font-bold text-green-600">
+                            {agentData.totalPaid.toFixed(2)} ج.م
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </CardContent>
