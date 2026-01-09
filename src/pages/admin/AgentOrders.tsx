@@ -21,7 +21,6 @@ const statusLabels: Record<string, string> = {
   shipped: "تم الشحن",
   delivered: "تم التوصيل",
   returned: "مرتجع",
-  partially_returned: "مرتجع جزئي",
   return_no_shipping: "مرتجع دون شحن"
 };
 
@@ -29,7 +28,6 @@ const statusColors: Record<string, string> = {
   shipped: "bg-purple-500",
   delivered: "bg-green-500",
   returned: "bg-orange-600",
-  partially_returned: "bg-orange-400",
   return_no_shipping: "bg-red-500"
 };
 
