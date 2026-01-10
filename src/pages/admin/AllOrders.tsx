@@ -113,7 +113,45 @@ const AllOrders = () => {
       orderId: string; 
       newStatus: string; 
     }) => {
-      // Database trigger handles all agent payment logic automatically
+      // Get the order first
+      const order = orders?.find(o => o.id === orderId);
+      
+      // If changing to "returned" and there's a delivery agent, handle payment logic
+      if (newStatus === "returned" && order?.delivery_agent_id) {
+        const totalAmount = parseFloat(order.total_amount?.toString() || "0");
+        const customerShipping = parseFloat(order.shipping_cost?.toString() || "0");
+        const agentShipping = parseFloat(order.agent_shipping_cost?.toString() || "0");
+        const orderTotal = totalAmount + customerShipping;
+        const returnAmount = orderTotal - agentShipping;
+        
+        // Get agent's current total_owed
+        const { data: agentData } = await supabase
+          .from("delivery_agents")
+          .select("total_owed")
+          .eq("id", order.delivery_agent_id)
+          .single();
+        
+        if (agentData) {
+          const currentOwed = parseFloat(agentData.total_owed?.toString() || "0");
+          const newOwed = currentOwed - returnAmount;
+          
+          // Update agent's total_owed
+          await supabase
+            .from("delivery_agents")
+            .update({ total_owed: newOwed })
+            .eq("id", order.delivery_agent_id);
+          
+          // Create payment record for the return (negative amount)
+          await supabase.from("agent_payments").insert({
+            delivery_agent_id: order.delivery_agent_id,
+            order_id: orderId,
+            amount: -returnAmount,
+            payment_type: 'return',
+            notes: `مرتجع كامل - أوردر #${order.order_number || orderId.slice(0, 8)}`
+          });
+        }
+      }
+      
       const { error } = await supabase
         .from("orders")
         .update({ status: newStatus as any })
@@ -127,6 +165,7 @@ const AllOrders = () => {
       queryClient.invalidateQueries({ queryKey: ["agent-orders"] });
       queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
       queryClient.invalidateQueries({ queryKey: ["agent_payments"] });
+      queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
       toast.success("تم تحديث حالة الأوردر بنجاح");
       setEditingStatus(null);
     },
@@ -181,18 +220,18 @@ const AllOrders = () => {
       
       if (returnError) throw returnError;
       
-      // Update order status to partially_returned
+      // Update order status to returned (since we're using returned instead of partially_returned)
       const { error: orderError } = await supabase
         .from("orders")
         .update({ 
-          status: 'partially_returned' as any,
+          status: 'returned' as any,
           total_amount: parseFloat(selectedOrderForReturn.total_amount?.toString() || "0") - returnAmount
         })
         .eq("id", selectedOrderForReturn.id);
       
       if (orderError) throw orderError;
       
-      // If there's an agent assigned, deduct from their owed amount
+      // If there's an agent assigned, deduct from their owed amount and add to returns
       if (selectedOrderForReturn.delivery_agent_id) {
         // Get agent's current total_owed
         const { data: agent, error: agentFetchError } = await supabase
@@ -214,7 +253,7 @@ const AllOrders = () => {
         
         if (agentUpdateError) throw agentUpdateError;
         
-        // Create payment record for the return
+        // Create payment record for the return (negative amount to show in "باقي من المرتجع")
         const { error: paymentError } = await supabase
           .from("agent_payments")
           .insert({
@@ -222,7 +261,7 @@ const AllOrders = () => {
             order_id: selectedOrderForReturn.id,
             amount: -returnAmount,
             payment_type: 'return',
-            notes: `مرتجع جزئي - ${returnedItems.map(i => `${i.product_name} × ${i.returned_quantity}`).join(", ")}`
+            notes: `مرتجع - ${returnedItems.map(i => `${i.product_name} × ${i.returned_quantity}`).join(", ")}`
           });
         
         if (paymentError) throw paymentError;
@@ -233,8 +272,9 @@ const AllOrders = () => {
       queryClient.invalidateQueries({ queryKey: ["agent-orders"] });
       queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
       queryClient.invalidateQueries({ queryKey: ["agent_payments"] });
+      queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
       queryClient.invalidateQueries({ queryKey: ["returns"] });
-      toast.success("تم تسجيل المرتجع الجزئي بنجاح");
+      toast.success("تم تسجيل المرتجع بنجاح");
       setPartialReturnDialogOpen(false);
       setSelectedOrderForReturn(null);
       setReturnItems([]);

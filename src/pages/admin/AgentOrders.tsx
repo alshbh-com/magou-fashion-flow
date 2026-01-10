@@ -146,13 +146,44 @@ const AgentOrders = () => {
 
       let updates: any = { status: status as any };
       
+      const totalAmount = parseFloat(order.total_amount?.toString() || "0");
+      const customerShipping = parseFloat(order.shipping_cost?.toString() || "0");
+      const agentShipping = parseFloat(order.agent_shipping_cost?.toString() || "0");
+      const orderTotal = totalAmount + customerShipping;
+      
+      // إذا كانت الحالة "مرتجع" - خصم المبلغ من المستحقات وإضافته لباقي المرتجع
+      if (status === "returned" && order.delivery_agent_id) {
+        // جلب البيانات الحالية للمندوب
+        const { data: agentData } = await supabase
+          .from("delivery_agents")
+          .select("total_owed")
+          .eq("id", order.delivery_agent_id)
+          .single();
+        
+        if (agentData) {
+          const currentOwed = parseFloat(agentData.total_owed?.toString() || "0");
+          // خصم سعر الأوردر من المستحقات (بدون شحن المندوب لأنه سيأخذه)
+          const returnAmount = orderTotal - agentShipping;
+          const newOwed = currentOwed - returnAmount;
+          
+          await supabase
+            .from("delivery_agents")
+            .update({ total_owed: newOwed })
+            .eq("id", order.delivery_agent_id);
+          
+          // إضافة سجل دفع من نوع return (سالب) لتسجيله في باقي المرتجع
+          await supabase.from("agent_payments").insert({
+            delivery_agent_id: order.delivery_agent_id,
+            order_id: id,
+            amount: -returnAmount,
+            payment_type: 'return',
+            notes: `مرتجع كامل - أوردر #${order.order_number || id.slice(0, 8)}`
+          });
+        }
+      }
+      
       // إذا كانت الحالة "مرتجع دون شحن"
       if (status === "return_no_shipping") {
-        const totalAmount = parseFloat(order.total_amount?.toString() || "0");
-        const customerShipping = parseFloat(order.shipping_cost?.toString() || "0");
-        const agentShipping = parseFloat(order.agent_shipping_cost?.toString() || "0");
-        const orderTotal = totalAmount + customerShipping;
-        
         // إلغاء تعيين المندوب (سيذهب الأوردر لجميع الأوردرات)
         updates.delivery_agent_id = null;
         
@@ -196,6 +227,7 @@ const AgentOrders = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["agent-orders"] });
       queryClient.invalidateQueries({ queryKey: ["agent_payments"] });
+      queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
       queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
       queryClient.invalidateQueries({ queryKey: ["all-orders"] });
       toast.success("تم تحديث الحالة");
