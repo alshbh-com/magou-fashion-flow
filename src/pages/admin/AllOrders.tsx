@@ -206,32 +206,13 @@ const AllOrders = () => {
         return sum + (item.returned_quantity * item.price);
       }, 0);
       
-      // Create return record
-      const { error: returnError } = await supabase
-        .from("returns")
-        .insert([{
-          order_id: selectedOrderForReturn.id,
-          customer_id: selectedOrderForReturn.customer_id,
-          delivery_agent_id: selectedOrderForReturn.delivery_agent_id,
-          return_amount: returnAmount,
-          returned_items: returnedItems as any,
-          notes: returnNotes
-        }]);
+      // Check if it's a full return (all items returned)
+      const totalItems = returnItems.reduce((sum, item) => sum + item.total_quantity, 0);
+      const totalReturnedItems = returnItems.reduce((sum, item) => sum + item.returned_quantity, 0);
+      const isFullReturn = totalItems === totalReturnedItems;
       
-      if (returnError) throw returnError;
-      
-      // Update order status to returned (since we're using returned instead of partially_returned)
-      const { error: orderError } = await supabase
-        .from("orders")
-        .update({ 
-          status: 'returned' as any,
-          total_amount: parseFloat(selectedOrderForReturn.total_amount?.toString() || "0") - returnAmount
-        })
-        .eq("id", selectedOrderForReturn.id);
-      
-      if (orderError) throw orderError;
-      
-      // If there's an agent assigned, deduct from their owed amount and add to returns
+      // If there's an agent assigned, deduct from their owed amount and add to returns FIRST
+      // (before updating order status which might trigger other logic)
       if (selectedOrderForReturn.delivery_agent_id) {
         // Get agent's current total_owed
         const { data: agent, error: agentFetchError } = await supabase
@@ -261,11 +242,38 @@ const AllOrders = () => {
             order_id: selectedOrderForReturn.id,
             amount: -returnAmount,
             payment_type: 'return',
-            notes: `مرتجع - ${returnedItems.map(i => `${i.product_name} × ${i.returned_quantity}`).join(", ")}`
+            notes: `مرتجع جزئي - ${returnedItems.map(i => `${i.product_name} × ${i.returned_quantity} (${i.returned_quantity * i.price} ج.م)`).join(", ")}`
           });
         
         if (paymentError) throw paymentError;
       }
+      
+      // Create return record
+      const { error: returnError } = await supabase
+        .from("returns")
+        .insert([{
+          order_id: selectedOrderForReturn.id,
+          customer_id: selectedOrderForReturn.customer_id,
+          delivery_agent_id: selectedOrderForReturn.delivery_agent_id,
+          return_amount: returnAmount,
+          returned_items: returnedItems as any,
+          notes: returnNotes
+        }]);
+      
+      if (returnError) throw returnError;
+      
+      // Update order - use 'partially_returned' for partial returns
+      const newTotalAmount = parseFloat(selectedOrderForReturn.total_amount?.toString() || "0") - returnAmount;
+      const { error: orderError } = await supabase
+        .from("orders")
+        .update({ 
+          status: isFullReturn ? 'returned' as any : 'delivered_with_modification' as any,
+          total_amount: newTotalAmount,
+          modified_amount: returnAmount
+        })
+        .eq("id", selectedOrderForReturn.id);
+      
+      if (orderError) throw orderError;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["all-orders"] });

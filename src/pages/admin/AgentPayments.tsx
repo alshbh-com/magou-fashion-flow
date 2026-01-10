@@ -25,6 +25,7 @@ const AgentPayments = () => {
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [editingPayment, setEditingPayment] = useState<any>(null);
   const [dateFilter, setDateFilter] = useState<string>("");
+  const [showReturnsDetails, setShowReturnsDetails] = useState(false);
   
   // State for editing summary values
   const [editingSummary, setEditingSummary] = useState<{type: string; value: string} | null>(null);
@@ -103,6 +104,15 @@ const AgentPayments = () => {
       const agentReceivables = totalOwed - totalDelivered - totalPaid - totalReturns;
       const totalDeliveredNet = Math.max(0, totalDelivered - deliveredReset);
 
+      // Get detailed returns for this agent
+      const returnsDetails = returnPayments.map(p => ({
+        id: p.id,
+        amount: Math.abs(parseFloat(p.amount.toString())),
+        notes: p.notes,
+        created_at: p.created_at,
+        order_id: p.order_id
+      }));
+
       return {
         payments: allPayments?.filter(p => p.payment_type === 'payment') || [],
         totalDelivered,
@@ -113,6 +123,7 @@ const AgentPayments = () => {
         agentReceivables,
         totalReturns,
         remainingReturns,
+        returnsDetails,
       };
     },
     enabled: !!selectedAgentId,
@@ -551,30 +562,40 @@ const AgentPayments = () => {
                     <div className="p-3 rounded-lg">
                       <div className="flex items-center justify-between mb-2">
                         <p className="text-sm text-muted-foreground">باقي من المرتجع</p>
-                        {canEditPayments && agentData.remainingReturns > 0 && (
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="outline" size="sm" className="h-6 px-2">
-                                <RefreshCw className="h-3 w-3 ml-1" />
-                                تصفير
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>تأكيد إعادة التعيين</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  سيتم تصفير باقي من المرتجع ({agentData.remainingReturns.toFixed(2)} ج.م)
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>إلغاء</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => resetReturnsMutation.mutate()}>
-                                  تأكيد
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        )}
+                        <div className="flex gap-1">
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="h-6 px-2"
+                            onClick={() => setShowReturnsDetails(!showReturnsDetails)}
+                          >
+                            {showReturnsDetails ? 'إخفاء' : 'تفاصيل'}
+                          </Button>
+                          {canEditPayments && agentData.remainingReturns > 0 && (
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="outline" size="sm" className="h-6 px-2">
+                                  <RefreshCw className="h-3 w-3 ml-1" />
+                                  تصفير
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>تأكيد إعادة التعيين</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    سيتم تصفير باقي من المرتجع ({agentData.remainingReturns.toFixed(2)} ج.م)
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => resetReturnsMutation.mutate()}>
+                                    تأكيد
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          )}
+                        </div>
                       </div>
                       <div 
                         className={`${canEditPayments ? 'cursor-pointer hover:opacity-80' : ''}`}
@@ -709,6 +730,47 @@ const AgentPayments = () => {
                         )}
                       </div>
                     </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Returns Details Table */}
+            {showReturnsDetails && selectedAgentId && agentData?.returnsDetails && agentData.returnsDetails.length > 0 && (
+              <Card className="mb-6">
+                <CardHeader>
+                  <CardTitle className="text-lg">سجل المرتجعات التفصيلي</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>التاريخ</TableHead>
+                          <TableHead>المبلغ</TableHead>
+                          <TableHead>التفاصيل</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {agentData.returnsDetails.map((ret: any) => (
+                          <TableRow key={ret.id}>
+                            <TableCell>
+                              {new Date(ret.created_at).toLocaleDateString("ar-EG", {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </TableCell>
+                            <TableCell className="font-bold text-orange-600">
+                              {ret.amount.toFixed(2)} ج.م
+                            </TableCell>
+                            <TableCell>{ret.notes || "-"}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 </CardContent>
               </Card>

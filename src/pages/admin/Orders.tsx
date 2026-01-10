@@ -208,19 +208,44 @@ const Orders = () => {
       // Customer is optional - create only if name or phone provided
       let customerId = null;
       if (manualOrder.customerName || manualOrder.phone) {
-        const { data: customer, error: customerError } = await supabase
-          .from("customers")
-          .insert({
-            name: manualOrder.customerName || "عميل غير محدد",
-            phone: manualOrder.phone || "غير متوفر",
-            address: manualOrder.address || "غير محدد",
-            governorate: selectedGov?.name || null
-          })
-          .select()
-          .single();
+        // Check if phone already exists
+        if (manualOrder.phone && manualOrder.phone !== "غير متوفر") {
+          const { data: existingCustomer } = await supabase
+            .from("customers")
+            .select("id")
+            .eq("phone", manualOrder.phone)
+            .single();
+          
+          if (existingCustomer) {
+            customerId = existingCustomer.id;
+            // Update existing customer info if needed
+            await supabase
+              .from("customers")
+              .update({
+                name: manualOrder.customerName || "عميل غير محدد",
+                address: manualOrder.address || "غير محدد",
+                governorate: selectedGov?.name || null
+              })
+              .eq("id", existingCustomer.id);
+          }
+        }
         
-        if (customerError) throw customerError;
-        customerId = customer.id;
+        // Create new customer only if not found
+        if (!customerId) {
+          const { data: customer, error: customerError } = await supabase
+            .from("customers")
+            .insert({
+              name: manualOrder.customerName || "عميل غير محدد",
+              phone: manualOrder.phone || "غير متوفر",
+              address: manualOrder.address || "غير محدد",
+              governorate: selectedGov?.name || null
+            })
+            .select()
+            .single();
+          
+          if (customerError) throw customerError;
+          customerId = customer.id;
+        }
       }
 
       const productPrice = parseFloat(manualOrder.productPrice) || 0;
