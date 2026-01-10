@@ -26,6 +26,8 @@ const Statistics = () => {
       if (error) throw error;
       return data;
     },
+    refetchInterval: 1000,
+    staleTime: 0,
   });
 
   // Get orders for selected month
@@ -47,6 +49,8 @@ const Statistics = () => {
       if (error) throw error;
       return data;
     },
+    refetchInterval: 1000,
+    staleTime: 0,
   });
 
   // Get orders for comparison month
@@ -70,6 +74,8 @@ const Statistics = () => {
       return data;
     },
     enabled: !!compareMonth,
+    refetchInterval: 1000,
+    staleTime: 0,
   });
 
   // Get all orders for yearly data
@@ -89,6 +95,8 @@ const Statistics = () => {
       if (error) throw error;
       return data;
     },
+    refetchInterval: 1000,
+    staleTime: 0,
   });
 
   const { data: agents } = useQuery({
@@ -98,6 +106,8 @@ const Statistics = () => {
       if (error) throw error;
       return data;
     },
+    refetchInterval: 1000,
+    staleTime: 0,
   });
 
   const { data: customers } = useQuery({
@@ -107,6 +117,8 @@ const Statistics = () => {
       if (error) throw error;
       return count || 0;
     },
+    refetchInterval: 1000,
+    staleTime: 0,
   });
 
   const resetMutation = useMutation({
