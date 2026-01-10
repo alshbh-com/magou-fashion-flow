@@ -252,12 +252,12 @@ const Statistics = () => {
             <div className="flex items-center gap-2 bg-white/10 rounded-lg px-4 py-2">
               <BarChart3 className="h-4 w-4 text-purple-200" />
               <span className="text-purple-200 text-sm">مقارنة مع:</span>
-              <Select value={compareMonth} onValueChange={setCompareMonth}>
+              <Select value={compareMonth || "none"} onValueChange={(val) => setCompareMonth(val === "none" ? "" : val)}>
                 <SelectTrigger className="bg-transparent border-0 text-white w-48">
                   <SelectValue placeholder="اختر شهر للمقارنة" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">بدون مقارنة</SelectItem>
+                  <SelectItem value="none">بدون مقارنة</SelectItem>
                   {monthOptions.filter(m => m.value !== selectedMonth).map(opt => (
                     <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
                   ))}
