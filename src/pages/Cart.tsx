@@ -180,6 +180,15 @@ const Cart = () => {
 
     try {
       if (isReturnOrder && returnOrderId) {
+        // جلب بيانات الأوردر الحالية قبل التعديل (علشان نحسب فرق القطع صح)
+        const { data: existingOrder, error: existingOrderError } = await supabase
+          .from("orders")
+          .select("total_amount, shipping_cost, agent_shipping_cost, delivery_agent_id, order_number")
+          .eq("id", returnOrderId)
+          .single();
+
+        if (existingOrderError) throw existingOrderError;
+
         // حساب إجمالي المنتجات فقط (بدون الشحن)
         const itemsTotal = items.reduce((sum, item) => {
           const price = getProductPrice(item.id, item.quantity);
@@ -187,12 +196,55 @@ const Cart = () => {
         }, 0);
         const totalAfterDiscount = itemsTotal - customerInfo.discount;
 
+        const newShippingCost = customerInfo.isShippingIncluded ? 0 : customerInfo.shippingCost;
+
+        // فرق الصافي (الفرق في (إجمالي + شحن العميل) فقط)
+        const oldTotalAmount = parseFloat(existingOrder.total_amount?.toString() || "0");
+        const oldShippingCost = parseFloat(existingOrder.shipping_cost?.toString() || "0");
+        const deltaTotal = (totalAfterDiscount + newShippingCost) - (oldTotalAmount + oldShippingCost);
+
+        // لو فيه مندوب على الأوردر: 
+        // - لو زودنا إجمالي الأوردر => تزود مستحقات على المندوب
+        // - لو نقصنا (نقص قطع) => تتخصم من مستحقات المندوب وتضاف لباقي من المرتجع
+        if (existingOrder.delivery_agent_id && deltaTotal !== 0) {
+          const { data: agent, error: agentFetchError } = await supabase
+            .from("delivery_agents")
+            .select("total_owed")
+            .eq("id", existingOrder.delivery_agent_id)
+            .single();
+
+          if (agentFetchError) throw agentFetchError;
+
+          const currentOwed = parseFloat(agent.total_owed?.toString() || "0");
+          const newOwed = currentOwed + deltaTotal;
+
+          const { error: agentUpdateError } = await supabase
+            .from("delivery_agents")
+            .update({ total_owed: newOwed })
+            .eq("id", existingOrder.delivery_agent_id);
+
+          if (agentUpdateError) throw agentUpdateError;
+
+          const paymentType = deltaTotal > 0 ? "owed" : "return";
+          const { error: paymentError } = await supabase
+            .from("agent_payments")
+            .insert({
+              delivery_agent_id: existingOrder.delivery_agent_id,
+              order_id: returnOrderId,
+              amount: deltaTotal,
+              payment_type: paymentType,
+              notes: `تعديل طلب رقم ${existingOrder.order_number ?? returnOrderId.slice(0, 8)} - ${deltaTotal > 0 ? 'إضافة' : 'خصم'} ${Math.abs(deltaTotal).toFixed(2)} ج.م`
+            });
+
+          if (paymentError) throw paymentError;
+        }
+
         // Update existing order
         const { error: orderError } = await supabase
           .from("orders")
           .update({
             total_amount: totalAfterDiscount,
-            shipping_cost: customerInfo.isShippingIncluded ? 0 : customerInfo.shippingCost,
+            shipping_cost: newShippingCost,
             discount: customerInfo.discount,
             order_details: customerInfo.orderDetails || null,
             notes: customerInfo.notes,
@@ -212,7 +264,7 @@ const Cart = () => {
         // Insert new order items
         const orderItems = items.map(item => {
           const price = getProductPrice(item.id, item.quantity);
-          
+
           return {
             order_id: returnOrderId,
             product_id: item.id,
