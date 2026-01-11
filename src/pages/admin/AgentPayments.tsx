@@ -88,13 +88,29 @@ const AgentPayments = () => {
       const deliveredResets = allPaymentsForTotals?.filter(p => p.payment_type === 'delivered_reset') || [];
       const returnPayments = allPaymentsForTotals?.filter(p => p.payment_type === 'return') || [];
       const returnResets = allPaymentsForTotals?.filter(p => p.payment_type === 'return_reset') || [];
+      const modificationPayments = allPaymentsForTotals?.filter(p => p.payment_type === 'modification') || [];
 
-      const totalOwed = owedPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
+      const totalOwedBase = owedPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
       const totalPaid = manualPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
       const totalDelivered = deliveredPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
       const deliveredReset = deliveredResets.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0);
+
+      // تعديلات الطلبات: الموجب يزيد المطلوب من المندوب، والسالب يعتبر "حق قطع" (يروح للمرتجع)
+      const modificationPositive = modificationPayments
+        .filter(p => parseFloat(p.amount.toString()) > 0)
+        .reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
+      const modificationNegativeAbs = modificationPayments
+        .filter(p => parseFloat(p.amount.toString()) < 0)
+        .reduce((sum, p) => sum + Math.abs(parseFloat(p.amount.toString())), 0);
+
+      // المطلوب من المندوب
+      const totalOwed = totalOwedBase + modificationPositive;
+
       // المبالغ المرتجعة (سالبة في قاعدة البيانات)
-      const totalReturns = returnPayments.reduce((sum, p) => sum + Math.abs(parseFloat(p.amount.toString())), 0);
+      const totalReturns =
+        returnPayments.reduce((sum, p) => sum + Math.abs(parseFloat(p.amount.toString())), 0) +
+        modificationNegativeAbs;
+
       const totalReturnResets = returnResets.reduce((sum, r) => sum + parseFloat(r.amount.toString()), 0);
 
       // باقي من المرتجع = إجمالي المرتجعات - ما تم تصفيره
@@ -104,8 +120,8 @@ const AgentPayments = () => {
       const agentReceivables = totalOwed - totalDelivered - totalPaid - totalReturns;
       const totalDeliveredNet = Math.max(0, totalDelivered - deliveredReset);
 
-      // Get detailed returns for this agent
-      const returnsDetails = returnPayments.map(p => ({
+      // Get detailed returns for this agent (return + تعديل بالسالب)
+      const returnsDetails = [...returnPayments, ...modificationPayments.filter(p => parseFloat(p.amount.toString()) < 0)].map(p => ({
         id: p.id,
         amount: Math.abs(parseFloat(p.amount.toString())),
         notes: p.notes,
@@ -290,23 +306,51 @@ const AgentPayments = () => {
   const adjustSummaryMutation = useMutation({
     mutationFn: async ({ type, newValue, currentValue }: { type: string; newValue: number; currentValue: number }) => {
       if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
-      
+
       const difference = newValue - currentValue;
       if (difference === 0) return;
 
-      const paymentType = type === 'receivables' ? 'owed' : 
-                         type === 'delivered' ? 'delivered' : 
-                         type === 'advance' ? 'payment' : 'return';
+      // ملاحظة مهمة:
+      // - تعديل "مستحقات على المندوب" => تعديل على "owed" (موجب/سالب)
+      // - تعديل "دفعة مقدمة" => تعديل على "payment" (موجب/سالب)
+      // - تعديل "إجمالي المسلم" => تعديل على "delivered" (موجب/سالب)
+      // - تعديل "باقي من المرتجع" =>
+      //    * لو زودت الباقي => نضيف return (سالب)
+      //    * لو قللت الباقي => نضيف return_reset (موجب)
+
+      let paymentType: string;
+      let amountToInsert: number;
+
+      if (type === 'returns') {
+        if (difference > 0) {
+          paymentType = 'return';
+          amountToInsert = -Math.abs(difference);
+        } else {
+          paymentType = 'return_reset';
+          amountToInsert = Math.abs(difference);
+        }
+      } else if (type === 'receivables') {
+        paymentType = 'owed';
+        amountToInsert = difference; // signed
+      } else if (type === 'delivered') {
+        paymentType = 'delivered';
+        amountToInsert = difference; // signed
+      } else if (type === 'advance') {
+        paymentType = 'payment';
+        amountToInsert = difference; // signed
+      } else {
+        throw new Error('نوع تعديل غير معروف');
+      }
 
       const { error } = await supabase
         .from("agent_payments")
         .insert({
           delivery_agent_id: selectedAgentId,
-          amount: Math.abs(difference),
+          amount: amountToInsert,
           payment_type: paymentType,
-          notes: `تعديل يدوي - ${difference > 0 ? 'إضافة' : 'خصم'} ${Math.abs(difference)} ج.م`
+          notes: `تعديل يدوي - ${difference > 0 ? 'إضافة' : 'خصم'} ${Math.abs(difference).toFixed(2)} ج.م`
         });
-      
+
       if (error) throw error;
     },
     onSuccess: () => {
@@ -377,10 +421,29 @@ const AgentPayments = () => {
 
   const handleSummarySubmit = () => {
     if (!editingSummary) return;
-    
+
     const newValue = parseFloat(editingSummary.value);
+    if (Number.isNaN(newValue)) {
+      toast.error("قيمة غير صحيحة");
+      return;
+    }
+
+    // قواعد خاصة بالمستحقات: لو كانت بالسالب ممنوع تحويلها لـ 0 أو رقم موجب
+    if (editingSummary.type === 'receivables') {
+      const currentReceivables = agentData?.agentReceivables || 0;
+      if (currentReceivables < 0 && newValue >= 0) {
+        toast.error("حدث خطأ");
+        return;
+      }
+    }
+
+    if (editingSummary.type === 'returns' && newValue < 0) {
+      toast.error("قيمة غير صحيحة");
+      return;
+    }
+
     let currentValue = 0;
-    
+
     switch (editingSummary.type) {
       case 'receivables':
         currentValue = agentData?.agentReceivables || 0;

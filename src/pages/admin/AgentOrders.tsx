@@ -153,32 +153,42 @@ const AgentOrders = () => {
       
       // إذا كانت الحالة "مرتجع" - خصم المبلغ من المستحقات وإضافته لباقي المرتجع
       if (status === "returned" && order.delivery_agent_id) {
-        // جلب البيانات الحالية للمندوب
-        const { data: agentData } = await supabase
-          .from("delivery_agents")
-          .select("total_owed")
-          .eq("id", order.delivery_agent_id)
-          .single();
-        
-        if (agentData) {
-          const currentOwed = parseFloat(agentData.total_owed?.toString() || "0");
-          // خصم سعر الأوردر من المستحقات (بدون شحن المندوب لأنه سيأخذه)
-          const returnAmount = orderTotal - agentShipping;
-          const newOwed = currentOwed - returnAmount;
-          
-          await supabase
+        // منع التكرار: لو في سجل مرتجع موجود بالفعل لنفس الأوردر
+        const { data: existingReturn } = await supabase
+          .from("agent_payments")
+          .select("id")
+          .eq("order_id", id)
+          .eq("payment_type", "return")
+          .maybeSingle();
+
+        if (!existingReturn) {
+          // جلب البيانات الحالية للمندوب
+          const { data: agentData } = await supabase
             .from("delivery_agents")
-            .update({ total_owed: newOwed })
-            .eq("id", order.delivery_agent_id);
-          
-          // إضافة سجل دفع من نوع return (سالب) لتسجيله في باقي المرتجع
-          await supabase.from("agent_payments").insert({
-            delivery_agent_id: order.delivery_agent_id,
-            order_id: id,
-            amount: -returnAmount,
-            payment_type: 'return',
-            notes: `مرتجع كامل - أوردر #${order.order_number || id.slice(0, 8)}`
-          });
+            .select("total_owed")
+            .eq("id", order.delivery_agent_id)
+            .single();
+
+          if (agentData) {
+            const currentOwed = parseFloat(agentData.total_owed?.toString() || "0");
+            // خصم سعر الأوردر من المستحقات (بدون شحن المندوب لأنه سيأخذه)
+            const returnAmount = orderTotal - agentShipping;
+            const newOwed = currentOwed - returnAmount;
+
+            await supabase
+              .from("delivery_agents")
+              .update({ total_owed: newOwed })
+              .eq("id", order.delivery_agent_id);
+
+            // إضافة سجل دفع من نوع return (سالب) لتسجيله في باقي المرتجع
+            await supabase.from("agent_payments").insert({
+              delivery_agent_id: order.delivery_agent_id,
+              order_id: id,
+              amount: -returnAmount,
+              payment_type: 'return',
+              notes: `مرتجع كامل - أوردر #${order.order_number || id.slice(0, 8)}`
+            });
+          }
         }
       }
       
@@ -186,33 +196,43 @@ const AgentOrders = () => {
       if (status === "return_no_shipping") {
         // إلغاء تعيين المندوب (سيذهب الأوردر لجميع الأوردرات)
         updates.delivery_agent_id = null;
-        
+
         if (order.delivery_agent_id) {
-          // جلب البيانات الحالية للمندوب
-          const { data: agentData } = await supabase
-            .from("delivery_agents")
-            .select("total_owed")
-            .eq("id", order.delivery_agent_id)
-            .single();
-          
-          if (agentData) {
-            const currentOwed = parseFloat(agentData.total_owed?.toString() || "0");
-            // خصم سعر الأوردر من المستحقات
-            const newOwed = currentOwed - orderTotal + agentShipping;
-            
-            await supabase
+          // منع التكرار
+          const { data: existingReturn } = await supabase
+            .from("agent_payments")
+            .select("id")
+            .eq("order_id", id)
+            .eq("payment_type", "return")
+            .maybeSingle();
+
+          if (!existingReturn) {
+            // جلب البيانات الحالية للمندوب
+            const { data: agentData } = await supabase
               .from("delivery_agents")
-              .update({ total_owed: newOwed })
-              .eq("id", order.delivery_agent_id);
-            
-            // إضافة سجل دفع لخصم سعر الأوردر
-            await supabase.from("agent_payments").insert({
-              delivery_agent_id: order.delivery_agent_id,
-              order_id: id,
-              amount: -(orderTotal - agentShipping),
-              payment_type: 'return',
-              notes: 'مرتجع دون شحن - إلغاء المستحقات وإضافة شحن المندوب للدفعة المقدمة'
-            });
+              .select("total_owed")
+              .eq("id", order.delivery_agent_id)
+              .single();
+
+            if (agentData) {
+              const currentOwed = parseFloat(agentData.total_owed?.toString() || "0");
+              // خصم سعر الأوردر من المستحقات
+              const newOwed = currentOwed - orderTotal + agentShipping;
+
+              await supabase
+                .from("delivery_agents")
+                .update({ total_owed: newOwed })
+                .eq("id", order.delivery_agent_id);
+
+              // إضافة سجل دفع لخصم سعر الأوردر
+              await supabase.from("agent_payments").insert({
+                delivery_agent_id: order.delivery_agent_id,
+                order_id: id,
+                amount: -(orderTotal - agentShipping),
+                payment_type: 'return',
+                notes: 'مرتجع دون شحن - إلغاء المستحقات وإضافة شحن المندوب للدفعة المقدمة'
+              });
+            }
           }
         }
       }
