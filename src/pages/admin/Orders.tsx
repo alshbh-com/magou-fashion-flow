@@ -62,6 +62,7 @@ const Orders = () => {
           )
         `)
         .is("delivery_agent_id", null)
+        .not("status", "in", '("returned","cancelled","return_no_shipping")')
         .order("created_at", { ascending: false });
       
       if (error) throw error;

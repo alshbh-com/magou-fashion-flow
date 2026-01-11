@@ -124,31 +124,42 @@ const AllOrders = () => {
         const orderTotal = totalAmount + customerShipping;
         const returnAmount = orderTotal - agentShipping;
         
-        // Get agent's current total_owed
-        const { data: agentData } = await supabase
-          .from("delivery_agents")
-          .select("total_owed")
-          .eq("id", order.delivery_agent_id)
-          .single();
+        // Check if a return record already exists for this order
+        const { data: existingReturn } = await supabase
+          .from("agent_payments")
+          .select("id")
+          .eq("order_id", orderId)
+          .eq("payment_type", "return")
+          .maybeSingle();
         
-        if (agentData) {
-          const currentOwed = parseFloat(agentData.total_owed?.toString() || "0");
-          const newOwed = currentOwed - returnAmount;
-          
-          // Update agent's total_owed
-          await supabase
+        // Only create return record if it doesn't exist
+        if (!existingReturn) {
+          // Get agent's current total_owed
+          const { data: agentData } = await supabase
             .from("delivery_agents")
-            .update({ total_owed: newOwed })
-            .eq("id", order.delivery_agent_id);
+            .select("total_owed")
+            .eq("id", order.delivery_agent_id)
+            .single();
           
-          // Create payment record for the return (negative amount)
-          await supabase.from("agent_payments").insert({
-            delivery_agent_id: order.delivery_agent_id,
-            order_id: orderId,
-            amount: -returnAmount,
-            payment_type: 'return',
-            notes: `مرتجع كامل - أوردر #${order.order_number || orderId.slice(0, 8)}`
-          });
+          if (agentData) {
+            const currentOwed = parseFloat(agentData.total_owed?.toString() || "0");
+            const newOwed = currentOwed - returnAmount;
+            
+            // Update agent's total_owed
+            await supabase
+              .from("delivery_agents")
+              .update({ total_owed: newOwed })
+              .eq("id", order.delivery_agent_id);
+            
+            // Create payment record for the return (negative amount)
+            await supabase.from("agent_payments").insert({
+              delivery_agent_id: order.delivery_agent_id,
+              order_id: orderId,
+              amount: -returnAmount,
+              payment_type: 'return',
+              notes: `مرتجع كامل - أوردر #${order.order_number || orderId.slice(0, 8)}`
+            });
+          }
         }
       }
       

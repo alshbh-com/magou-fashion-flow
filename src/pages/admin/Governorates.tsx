@@ -5,7 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Save } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { ArrowLeft, Save, Plus, Trash2, Pencil } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -14,6 +17,10 @@ const Governorates = () => {
   const queryClient = useQueryClient();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [shippingCosts, setShippingCosts] = useState<Record<string, number>>({});
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingGovernorate, setEditingGovernorate] = useState<any>(null);
+  const [newGovernorate, setNewGovernorate] = useState({ name: "", shipping_cost: "" });
 
   const { data: governorates, isLoading } = useQuery({
     queryKey: ["governorates"],
@@ -26,6 +33,63 @@ const Governorates = () => {
       if (error) throw error;
       return data;
     },
+  });
+
+  const addGovernorateMutation = useMutation({
+    mutationFn: async ({ name, shippingCost }: { name: string; shippingCost: number }) => {
+      const { error } = await supabase
+        .from("governorates")
+        .insert({ name, shipping_cost: shippingCost });
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["governorates"] });
+      toast.success("تم إضافة المحافظة بنجاح");
+      setAddDialogOpen(false);
+      setNewGovernorate({ name: "", shipping_cost: "" });
+    },
+    onError: () => {
+      toast.error("حدث خطأ أثناء الإضافة");
+    }
+  });
+
+  const updateGovernorateMutation = useMutation({
+    mutationFn: async ({ id, name, shippingCost }: { id: string; name: string; shippingCost: number }) => {
+      const { error } = await supabase
+        .from("governorates")
+        .update({ name, shipping_cost: shippingCost })
+        .eq("id", id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["governorates"] });
+      toast.success("تم تحديث المحافظة بنجاح");
+      setEditDialogOpen(false);
+      setEditingGovernorate(null);
+    },
+    onError: () => {
+      toast.error("حدث خطأ أثناء التحديث");
+    }
+  });
+
+  const deleteGovernorateMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("governorates")
+        .delete()
+        .eq("id", id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["governorates"] });
+      toast.success("تم حذف المحافظة بنجاح");
+    },
+    onError: () => {
+      toast.error("حدث خطأ أثناء الحذف");
+    }
   });
 
   const updateShippingCostMutation = useMutation({
@@ -51,6 +115,34 @@ const Governorates = () => {
     }
   };
 
+  const handleAddGovernorate = () => {
+    if (!newGovernorate.name.trim()) {
+      toast.error("يرجى إدخال اسم المحافظة");
+      return;
+    }
+    addGovernorateMutation.mutate({
+      name: newGovernorate.name.trim(),
+      shippingCost: parseFloat(newGovernorate.shipping_cost) || 0
+    });
+  };
+
+  const handleEditGovernorate = () => {
+    if (!editingGovernorate?.name?.trim()) {
+      toast.error("يرجى إدخال اسم المحافظة");
+      return;
+    }
+    updateGovernorateMutation.mutate({
+      id: editingGovernorate.id,
+      name: editingGovernorate.name.trim(),
+      shippingCost: parseFloat(editingGovernorate.shipping_cost) || 0
+    });
+  };
+
+  const openEditDialog = (gov: any) => {
+    setEditingGovernorate({ ...gov });
+    setEditDialogOpen(true);
+  };
+
   if (isLoading) {
     return <div className="p-8">جاري التحميل...</div>;
   }
@@ -64,8 +156,47 @@ const Governorates = () => {
         </Button>
 
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>المحافظات وأسعار الشحن</CardTitle>
+            <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="ml-2 h-4 w-4" />
+                  إضافة محافظة
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>إضافة محافظة جديدة</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div>
+                    <Label>اسم المحافظة</Label>
+                    <Input
+                      value={newGovernorate.name}
+                      onChange={(e) => setNewGovernorate({ ...newGovernorate, name: e.target.value })}
+                      placeholder="أدخل اسم المحافظة"
+                    />
+                  </div>
+                  <div>
+                    <Label>سعر الشحن (ج.م)</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={newGovernorate.shipping_cost}
+                      onChange={(e) => setNewGovernorate({ ...newGovernorate, shipping_cost: e.target.value })}
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="ghost" onClick={() => setAddDialogOpen(false)}>إلغاء</Button>
+                  <Button onClick={handleAddGovernorate} disabled={addGovernorateMutation.isPending}>
+                    {addGovernorateMutation.isPending ? "جاري الإضافة..." : "إضافة"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
@@ -97,16 +228,49 @@ const Governorates = () => {
                         />
                       </TableCell>
                       <TableCell>
-                        {editingId === gov.id && (
+                        <div className="flex items-center gap-2">
+                          {editingId === gov.id && (
+                            <Button
+                              size="sm"
+                              onClick={() => handleSave(gov.id)}
+                              disabled={updateShippingCostMutation.isPending}
+                            >
+                              <Save className="ml-2 h-4 w-4" />
+                              حفظ
+                            </Button>
+                          )}
                           <Button
                             size="sm"
-                            onClick={() => handleSave(gov.id)}
-                            disabled={updateShippingCostMutation.isPending}
+                            variant="outline"
+                            onClick={() => openEditDialog(gov)}
                           >
-                            <Save className="ml-2 h-4 w-4" />
-                            حفظ
+                            <Pencil className="h-4 w-4" />
                           </Button>
-                        )}
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button size="sm" variant="destructive">
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  هل أنت متأكد من حذف محافظة "{gov.name}"؟
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => deleteGovernorateMutation.mutate(gov.id)}
+                                  className="bg-destructive text-destructive-foreground"
+                                >
+                                  حذف
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -115,6 +279,41 @@ const Governorates = () => {
             </div>
           </CardContent>
         </Card>
+
+        {/* Edit Governorate Dialog */}
+        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>تعديل المحافظة</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label>اسم المحافظة</Label>
+                <Input
+                  value={editingGovernorate?.name || ""}
+                  onChange={(e) => setEditingGovernorate({ ...editingGovernorate, name: e.target.value })}
+                  placeholder="أدخل اسم المحافظة"
+                />
+              </div>
+              <div>
+                <Label>سعر الشحن (ج.م)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={editingGovernorate?.shipping_cost || ""}
+                  onChange={(e) => setEditingGovernorate({ ...editingGovernorate, shipping_cost: e.target.value })}
+                  placeholder="0"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setEditDialogOpen(false)}>إلغاء</Button>
+              <Button onClick={handleEditGovernorate} disabled={updateGovernorateMutation.isPending}>
+                {updateGovernorateMutation.isPending ? "جاري الحفظ..." : "حفظ"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
