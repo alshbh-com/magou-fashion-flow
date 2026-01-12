@@ -56,9 +56,10 @@ const AgentOrders = () => {
   const [editingShipping, setEditingShipping] = useState<string | null>(null);
   const [newShipping, setNewShipping] = useState<string>("");
   
-  // Summary states
-  const [summaryDateFilter, setSummaryDateFilter] = useState<string>("all");
-  const [showDailySummary, setShowDailySummary] = useState(false);
+  // Summary states - default to today's date
+  const today = new Date().toISOString().split('T')[0];
+  const [summaryDateFilter, setSummaryDateFilter] = useState<string>(today);
+  
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState<string>("");
   const [editingField, setEditingField] = useState<string | null>(null);
@@ -197,28 +198,13 @@ const AgentOrders = () => {
     const owedPayments = paymentsToUse.filter(p => p.payment_type === 'owed');
     const manualPayments = paymentsToUse.filter(p => p.payment_type === 'payment');
     const deliveredPayments = paymentsToUse.filter(p => p.payment_type === 'delivered');
-    const returnPayments = paymentsToUse.filter(p => p.payment_type === 'return');
-    const modificationPayments = paymentsToUse.filter(p => p.payment_type === 'modification');
 
-    const totalOwedBase = owedPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
+    const totalOwed = owedPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
     const totalPaid = manualPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
     const totalDelivered = deliveredPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
-    
-    // حق القطع = تعديلات سالبة
-    const modificationNegative = modificationPayments
-      .filter(p => parseFloat(p.amount.toString()) < 0)
-      .reduce((sum, p) => sum + Math.abs(parseFloat(p.amount.toString())), 0);
-    
-    // تعديلات موجبة تضاف للمستحقات
-    const modificationPositive = modificationPayments
-      .filter(p => parseFloat(p.amount.toString()) > 0)
-      .reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
 
-    const totalOwed = totalOwedBase + modificationPositive;
-    const totalReturns = returnPayments.reduce((sum, p) => sum + Math.abs(parseFloat(p.amount.toString())), 0) + modificationNegative;
-
-    // مستحقات على المندوب = المطلوب منه - المسلم - الدفعات المقدمة - المرتجعات
-    const agentReceivables = totalOwed - totalDelivered - totalPaid - totalReturns;
+    // مستحقات على المندوب = المطلوب منه - المسلم - الدفعات المقدمة
+    const agentReceivables = totalOwed - totalDelivered - totalPaid;
 
     // حساب إحصائيات الأوردرات
     const shippedOrders = ordersToUse.filter(o => o.status === 'shipped');
@@ -243,7 +229,6 @@ const AgentOrders = () => {
       totalOwed,
       totalPaid,
       totalDelivered,
-      totalReturns,
       agentReceivables,
       shippedCount: shippedOrders.length,
       deliveredCount: deliveredOrders.length,
@@ -253,7 +238,7 @@ const AgentOrders = () => {
     };
   };
 
-  const summaryData = calculateSummary(showDailySummary && summaryDateFilter !== "all" ? summaryDateFilter : undefined);
+  const summaryData = calculateSummary(summaryDateFilter);
 
   // Get unique dates from orders for daily filter
   const uniqueDates = [...new Set(allAgentOrders?.map(o => new Date(o.created_at).toISOString().split('T')[0]) || [])].sort().reverse();
@@ -1459,14 +1444,6 @@ const AgentOrders = () => {
               <div className="flex items-center justify-between flex-wrap gap-4">
                 <CardTitle>ملخص مستحقات المندوب</CardTitle>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Button
-                    variant={showDailySummary ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setShowDailySummary(!showDailySummary)}
-                  >
-                    <Calendar className="ml-2 h-4 w-4" />
-                    {showDailySummary ? "إلغاء الفلتر اليومي" : "عرض باليومية"}
-                  </Button>
                   <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
                     <DialogTrigger asChild>
                       <Button size="sm">
@@ -1504,24 +1481,21 @@ const AgentOrders = () => {
                   </Dialog>
                 </div>
               </div>
-              {showDailySummary && (
-                <div className="mt-4">
-                  <Label>اختر التاريخ:</Label>
-                  <Select value={summaryDateFilter} onValueChange={setSummaryDateFilter}>
-                    <SelectTrigger className="w-48 mt-1">
-                      <SelectValue placeholder="جميع الأيام" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">جميع الأيام</SelectItem>
-                      {uniqueDates.map((date) => (
-                        <SelectItem key={date} value={date}>
-                          {new Date(date).toLocaleDateString('ar-EG')}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
+              <div className="mt-4">
+                <Label>اختر التاريخ:</Label>
+                <Select value={summaryDateFilter} onValueChange={setSummaryDateFilter}>
+                  <SelectTrigger className="w-48 mt-1">
+                    <SelectValue placeholder="اليوم" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {uniqueDates.map((date) => (
+                      <SelectItem key={date} value={date}>
+                        {new Date(date).toLocaleDateString('ar-EG')}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </CardHeader>
             <CardContent>
               {summaryData ? (
@@ -1533,7 +1507,7 @@ const AgentOrders = () => {
                       {summaryData.agentReceivables.toFixed(2)} ج.م
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      = المطلوب ({summaryData.totalOwed.toFixed(2)}) - المسلم ({summaryData.totalDelivered.toFixed(2)}) - الدفعات ({summaryData.totalPaid.toFixed(2)}) - المرتجعات ({summaryData.totalReturns.toFixed(2)})
+                      = المطلوب ({summaryData.totalOwed.toFixed(2)}) - المسلم ({summaryData.totalDelivered.toFixed(2)}) - الدفعات ({summaryData.totalPaid.toFixed(2)})
                     </p>
                   </div>
 
@@ -1541,7 +1515,7 @@ const AgentOrders = () => {
                   <div className="p-4 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
                     <div className="flex items-center justify-between mb-1">
                       <p className="text-sm text-muted-foreground">الأوردرات المسلمة</p>
-                      {!showDailySummary && (
+                      {summaryDateFilter === today && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -1582,7 +1556,7 @@ const AgentOrders = () => {
                   <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
                     <div className="flex items-center justify-between mb-1">
                       <p className="text-sm text-muted-foreground">الدفعة المقدمة</p>
-                      {!showDailySummary && (
+                      {summaryDateFilter === today && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -1614,13 +1588,6 @@ const AgentOrders = () => {
                     )}
                   </div>
 
-                  {/* باقي من المرتجع */}
-                  <div className="p-4 bg-orange-50 dark:bg-orange-950/20 rounded-lg border border-orange-200 dark:border-orange-800">
-                    <p className="text-sm text-muted-foreground mb-1">المرتجعات + حق القطع</p>
-                    <p className="text-2xl font-bold text-orange-600">
-                      {summaryData.totalReturns.toFixed(2)} ج.م
-                    </p>
-                  </div>
 
                   {/* المطلوب من المندوب */}
                   <div className="p-4 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800">
