@@ -57,7 +57,7 @@ const AgentOrders = () => {
   const [newShipping, setNewShipping] = useState<string>("");
   
   // Summary states
-  const [summaryDateFilter, setSummaryDateFilter] = useState<string>("");
+  const [summaryDateFilter, setSummaryDateFilter] = useState<string>("all");
   const [showDailySummary, setShowDailySummary] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState<string>("");
@@ -253,7 +253,7 @@ const AgentOrders = () => {
     };
   };
 
-  const summaryData = calculateSummary(showDailySummary ? summaryDateFilter : undefined);
+  const summaryData = calculateSummary(showDailySummary && summaryDateFilter !== "all" ? summaryDateFilter : undefined);
 
   // Get unique dates from orders for daily filter
   const uniqueDates = [...new Set(allAgentOrders?.map(o => new Date(o.created_at).toISOString().split('T')[0]) || [])].sort().reverse();
@@ -1512,7 +1512,7 @@ const AgentOrders = () => {
                       <SelectValue placeholder="جميع الأيام" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">جميع الأيام</SelectItem>
+                      <SelectItem value="all">جميع الأيام</SelectItem>
                       {uniqueDates.map((date) => (
                         <SelectItem key={date} value={date}>
                           {new Date(date).toLocaleDateString('ar-EG')}
