@@ -14,7 +14,7 @@ import Orders from "./pages/admin/Orders";
 import Products from "./pages/admin/Products";
 import Categories from "./pages/admin/Categories";
 import AgentOrders from "./pages/admin/AgentOrders";
-import AgentPayments from "./pages/admin/AgentPayments";
+
 import Statistics from "./pages/admin/Statistics";
 import Invoices from "./pages/admin/Invoices";
 import Governorates from "./pages/admin/Governorates";
@@ -50,7 +50,7 @@ const App = () => (
               <Route path="/admin/products" element={<Products />} />
               <Route path="/admin/categories" element={<Categories />} />
               <Route path="/admin/agent-orders" element={<AgentOrders />} />
-              <Route path="/admin/agent-payments" element={<AgentPayments />} />
+              
               <Route path="/admin/statistics" element={<Statistics />} />
               <Route path="/admin/invoices" element={<Invoices />} />
               <Route path="/admin/governorates" element={<Governorates />} />
