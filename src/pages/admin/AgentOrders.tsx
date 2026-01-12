@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ArrowLeft, PackageX, Printer, Download, AlertTriangle, Trash2, MessageCircle } from "lucide-react";
+import { ArrowLeft, PackageX, Printer, Download, AlertTriangle, Trash2, MessageCircle, ArrowDown, Plus, Edit2, ChevronDown, ChevronUp, Calendar } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import * as XLSX from 'xlsx';
@@ -34,6 +34,7 @@ const statusColors: Record<string, string> = {
 const AgentOrders = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const summaryRef = useRef<HTMLDivElement>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [startDate, setStartDate] = useState<string>("");
@@ -54,6 +55,18 @@ const AgentOrders = () => {
   });
   const [editingShipping, setEditingShipping] = useState<string | null>(null);
   const [newShipping, setNewShipping] = useState<string>("");
+  
+  // Summary states
+  const [summaryDateFilter, setSummaryDateFilter] = useState<string>("");
+  const [showDailySummary, setShowDailySummary] = useState(false);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState<string>("");
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState<string>("");
+
+  const scrollToSummary = () => {
+    summaryRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   const { data: agents } = useQuery({
     queryKey: ["delivery_agents"],
@@ -110,6 +123,255 @@ const AgentOrders = () => {
     },
     enabled: !!selectedAgentId
   });
+
+  // Query for all orders for this agent (for summary)
+  const { data: allAgentOrders } = useQuery({
+    queryKey: ["all-agent-orders", selectedAgentId],
+    queryFn: async () => {
+      if (!selectedAgentId) return [];
+      
+      const { data, error } = await supabase
+        .from("orders")
+        .select(`
+          *,
+          customers (name, phone, address, governorate)
+        `)
+        .eq("delivery_agent_id", selectedAgentId)
+        .order("created_at", { ascending: false });
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!selectedAgentId
+  });
+
+  // Query for agent payments data (for summary calculations)
+  const { data: agentPaymentsData } = useQuery({
+    queryKey: ["agent_payments_full", selectedAgentId],
+    queryFn: async () => {
+      if (!selectedAgentId) return [];
+      
+      const { data, error } = await supabase
+        .from("agent_payments")
+        .select("*")
+        .eq("delivery_agent_id", selectedAgentId)
+        .order("created_at", { ascending: false });
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!selectedAgentId
+  });
+
+  // Query for governorates
+  const { data: governorates } = useQuery({
+    queryKey: ["governorates"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("governorates")
+        .select("*");
+      
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Calculate summary data
+  const calculateSummary = (dateFilter?: string) => {
+    if (!agentPaymentsData || !allAgentOrders) return null;
+
+    let paymentsToUse = agentPaymentsData;
+    let ordersToUse = allAgentOrders;
+
+    if (dateFilter) {
+      paymentsToUse = agentPaymentsData.filter(p => {
+        const paymentDate = new Date(p.created_at || "").toISOString().split('T')[0];
+        return paymentDate === dateFilter;
+      });
+      ordersToUse = allAgentOrders.filter(o => {
+        const orderDate = new Date(o.created_at).toISOString().split('T')[0];
+        return orderDate === dateFilter;
+      });
+    }
+
+    const owedPayments = paymentsToUse.filter(p => p.payment_type === 'owed');
+    const manualPayments = paymentsToUse.filter(p => p.payment_type === 'payment');
+    const deliveredPayments = paymentsToUse.filter(p => p.payment_type === 'delivered');
+    const returnPayments = paymentsToUse.filter(p => p.payment_type === 'return');
+    const modificationPayments = paymentsToUse.filter(p => p.payment_type === 'modification');
+
+    const totalOwedBase = owedPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
+    const totalPaid = manualPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
+    const totalDelivered = deliveredPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
+    
+    // حق القطع = تعديلات سالبة
+    const modificationNegative = modificationPayments
+      .filter(p => parseFloat(p.amount.toString()) < 0)
+      .reduce((sum, p) => sum + Math.abs(parseFloat(p.amount.toString())), 0);
+    
+    // تعديلات موجبة تضاف للمستحقات
+    const modificationPositive = modificationPayments
+      .filter(p => parseFloat(p.amount.toString()) > 0)
+      .reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
+
+    const totalOwed = totalOwedBase + modificationPositive;
+    const totalReturns = returnPayments.reduce((sum, p) => sum + Math.abs(parseFloat(p.amount.toString())), 0) + modificationNegative;
+
+    // مستحقات على المندوب = المطلوب منه - المسلم - الدفعات المقدمة - المرتجعات
+    const agentReceivables = totalOwed - totalDelivered - totalPaid - totalReturns;
+
+    // حساب إحصائيات الأوردرات
+    const shippedOrders = ordersToUse.filter(o => o.status === 'shipped');
+    const deliveredOrders = ordersToUse.filter(o => o.status === 'delivered');
+    const returnedOrders = ordersToUse.filter(o => ['returned', 'return_no_shipping', 'partially_returned'].includes(o.status || ''));
+
+    const shippedTotal = shippedOrders.reduce((sum, o) => {
+      const total = parseFloat(o.total_amount?.toString() || "0");
+      const shipping = parseFloat(o.shipping_cost?.toString() || "0");
+      const agentShipping = parseFloat(o.agent_shipping_cost?.toString() || "0");
+      return sum + total + shipping - agentShipping;
+    }, 0);
+
+    const deliveredTotal = deliveredOrders.reduce((sum, o) => {
+      const total = parseFloat(o.total_amount?.toString() || "0");
+      const shipping = parseFloat(o.shipping_cost?.toString() || "0");
+      const agentShipping = parseFloat(o.agent_shipping_cost?.toString() || "0");
+      return sum + total + shipping - agentShipping;
+    }, 0);
+
+    return {
+      totalOwed,
+      totalPaid,
+      totalDelivered,
+      totalReturns,
+      agentReceivables,
+      shippedCount: shippedOrders.length,
+      deliveredCount: deliveredOrders.length,
+      returnedCount: returnedOrders.length,
+      shippedTotal,
+      deliveredTotal
+    };
+  };
+
+  const summaryData = calculateSummary(showDailySummary ? summaryDateFilter : undefined);
+
+  // Get unique dates from orders for daily filter
+  const uniqueDates = [...new Set(allAgentOrders?.map(o => new Date(o.created_at).toISOString().split('T')[0]) || [])].sort().reverse();
+
+  // Add payment mutation
+  const addPaymentMutation = useMutation({
+    mutationFn: async (amount: number) => {
+      if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
+
+      const { error } = await supabase
+        .from("agent_payments")
+        .insert({
+          delivery_agent_id: selectedAgentId,
+          amount: amount,
+          payment_type: 'payment',
+          notes: `دفعة مقدمة - ${amount.toFixed(2)} ج.م`
+        });
+
+      if (error) throw error;
+
+      // Update agent total_paid
+      const { data: agent, error: agentError } = await supabase
+        .from("delivery_agents")
+        .select("total_paid")
+        .eq("id", selectedAgentId)
+        .single();
+
+      if (agentError) throw agentError;
+
+      const newTotalPaid = parseFloat(agent.total_paid?.toString() || "0") + amount;
+      
+      await supabase
+        .from("delivery_agents")
+        .update({ total_paid: newTotalPaid })
+        .eq("id", selectedAgentId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agent_payments_full"] });
+      queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
+      toast.success("تم إضافة الدفعة بنجاح");
+      setPaymentDialogOpen(false);
+      setPaymentAmount("");
+    },
+    onError: () => {
+      toast.error("حدث خطأ أثناء إضافة الدفعة");
+    }
+  });
+
+  // Edit summary field mutation
+  const editSummaryMutation = useMutation({
+    mutationFn: async ({ field, newValue, currentValue }: { field: string; newValue: number; currentValue: number }) => {
+      if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
+
+      const difference = newValue - currentValue;
+      if (difference === 0) return;
+
+      let paymentType: string;
+      let amount: number;
+
+      if (field === 'payment') {
+        paymentType = 'payment';
+        amount = difference;
+      } else if (field === 'delivered') {
+        paymentType = 'delivered';
+        amount = difference;
+      } else {
+        throw new Error('نوع غير معروف');
+      }
+
+      const { error } = await supabase
+        .from("agent_payments")
+        .insert({
+          delivery_agent_id: selectedAgentId,
+          amount: amount,
+          payment_type: paymentType,
+          notes: `تعديل يدوي - ${difference > 0 ? 'إضافة' : 'خصم'} ${Math.abs(difference).toFixed(2)} ج.م`
+        });
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agent_payments_full"] });
+      queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
+      toast.success("تم التعديل بنجاح");
+      setEditingField(null);
+      setEditingValue("");
+    },
+    onError: () => {
+      toast.error("حدث خطأ أثناء التعديل");
+    }
+  });
+
+  const handleAddPayment = () => {
+    const amount = parseFloat(paymentAmount);
+    if (isNaN(amount) || amount <= 0) {
+      toast.error("يرجى إدخال مبلغ صحيح");
+      return;
+    }
+    addPaymentMutation.mutate(amount);
+  };
+
+  const handleEditSummary = () => {
+    if (!editingField) return;
+    const newValue = parseFloat(editingValue);
+    if (isNaN(newValue)) {
+      toast.error("قيمة غير صحيحة");
+      return;
+    }
+
+    let currentValue = 0;
+    if (editingField === 'payment') {
+      currentValue = summaryData?.totalPaid || 0;
+    } else if (editingField === 'delivered') {
+      currentValue = summaryData?.totalDelivered || 0;
+    }
+
+    editSummaryMutation.mutate({ field: editingField, newValue, currentValue });
+  };
 
   const filteredOrders = orders?.filter(order => {
     if (statusFilter !== "all" && order.status !== statusFilter) return false;
@@ -772,7 +1034,15 @@ const AgentOrders = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle>أوردرات المندوب</CardTitle>
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <CardTitle>أوردرات المندوب</CardTitle>
+              {selectedAgentId && (
+                <Button onClick={scrollToSummary} variant="outline" size="sm">
+                  <ArrowDown className="ml-2 h-4 w-4" />
+                  الذهاب للملخص
+                </Button>
+              )}
+            </div>
             <div className="mt-4 space-y-4">
               <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
                 <SelectTrigger className="w-64">
@@ -1154,9 +1424,9 @@ const AgentOrders = () => {
                   </TableBody>
                 </Table>
                 
-                {/* Summary */}
+                {/* Orders Summary - visible only when there are orders in the filter */}
                 <div className="mt-6 p-4 bg-accent rounded-lg space-y-2">
-                  <h3 className="font-bold mb-2">ملخص مستحقات المندوب</h3>
+                  <h3 className="font-bold mb-2">ملخص الأوردرات المعروضة</h3>
                   <p>عدد الأوردرات: {filteredOrders.length}</p>
                   <p className="font-bold text-lg text-purple-600">
                     إجمالي الأوردرات: {filteredOrders.reduce((sum, order) => {
@@ -1181,6 +1451,202 @@ const AgentOrders = () => {
             )}
           </CardContent>
         </Card>
+
+        {/* Agent Summary Card - Always visible when agent is selected */}
+        {selectedAgentId && (
+          <Card ref={summaryRef} className="mt-6">
+            <CardHeader>
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <CardTitle>ملخص مستحقات المندوب</CardTitle>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button
+                    variant={showDailySummary ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setShowDailySummary(!showDailySummary)}
+                  >
+                    <Calendar className="ml-2 h-4 w-4" />
+                    {showDailySummary ? "إلغاء الفلتر اليومي" : "عرض باليومية"}
+                  </Button>
+                  <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button size="sm">
+                        <Plus className="ml-2 h-4 w-4" />
+                        إضافة دفعة
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>إضافة دفعة مقدمة</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4 py-4">
+                        <div>
+                          <Label>المبلغ (ج.م)</Label>
+                          <Input
+                            type="number"
+                            value={paymentAmount}
+                            onChange={(e) => setPaymentAmount(e.target.value)}
+                            placeholder="أدخل المبلغ"
+                          />
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          سيتم خصم هذا المبلغ من مستحقات المندوب
+                        </p>
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>
+                          إلغاء
+                        </Button>
+                        <Button onClick={handleAddPayment}>
+                          إضافة الدفعة
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </div>
+              {showDailySummary && (
+                <div className="mt-4">
+                  <Label>اختر التاريخ:</Label>
+                  <Select value={summaryDateFilter} onValueChange={setSummaryDateFilter}>
+                    <SelectTrigger className="w-48 mt-1">
+                      <SelectValue placeholder="جميع الأيام" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">جميع الأيام</SelectItem>
+                      {uniqueDates.map((date) => (
+                        <SelectItem key={date} value={date}>
+                          {new Date(date).toLocaleDateString('ar-EG')}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </CardHeader>
+            <CardContent>
+              {summaryData ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {/* مستحقات على المندوب */}
+                  <div className="p-4 bg-red-50 dark:bg-red-950/20 rounded-lg border border-red-200 dark:border-red-800">
+                    <p className="text-sm text-muted-foreground mb-1">مستحقات على المندوب</p>
+                    <p className={`text-2xl font-bold ${summaryData.agentReceivables >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      {summaryData.agentReceivables.toFixed(2)} ج.م
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      = المطلوب ({summaryData.totalOwed.toFixed(2)}) - المسلم ({summaryData.totalDelivered.toFixed(2)}) - الدفعات ({summaryData.totalPaid.toFixed(2)}) - المرتجعات ({summaryData.totalReturns.toFixed(2)})
+                    </p>
+                  </div>
+
+                  {/* الأوردرات المسلمة */}
+                  <div className="p-4 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-sm text-muted-foreground">الأوردرات المسلمة</p>
+                      {!showDailySummary && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => {
+                            setEditingField('delivered');
+                            setEditingValue(summaryData.totalDelivered.toFixed(2));
+                          }}
+                        >
+                          <Edit2 className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
+                    {editingField === 'delivered' ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          className="h-8"
+                        />
+                        <Button size="sm" onClick={handleEditSummary}>حفظ</Button>
+                        <Button size="sm" variant="outline" onClick={() => setEditingField(null)}>إلغاء</Button>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-2xl font-bold text-green-600">
+                          {summaryData.totalDelivered.toFixed(2)} ج.م
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          عدد: {summaryData.deliveredCount} أوردر
+                        </p>
+                      </>
+                    )}
+                  </div>
+
+                  {/* الدفعة المقدمة */}
+                  <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-sm text-muted-foreground">الدفعة المقدمة</p>
+                      {!showDailySummary && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => {
+                            setEditingField('payment');
+                            setEditingValue(summaryData.totalPaid.toFixed(2));
+                          }}
+                        >
+                          <Edit2 className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
+                    {editingField === 'payment' ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          className="h-8"
+                        />
+                        <Button size="sm" onClick={handleEditSummary}>حفظ</Button>
+                        <Button size="sm" variant="outline" onClick={() => setEditingField(null)}>إلغاء</Button>
+                      </div>
+                    ) : (
+                      <p className="text-2xl font-bold text-blue-600">
+                        {summaryData.totalPaid.toFixed(2)} ج.م
+                      </p>
+                    )}
+                  </div>
+
+                  {/* باقي من المرتجع */}
+                  <div className="p-4 bg-orange-50 dark:bg-orange-950/20 rounded-lg border border-orange-200 dark:border-orange-800">
+                    <p className="text-sm text-muted-foreground mb-1">المرتجعات + حق القطع</p>
+                    <p className="text-2xl font-bold text-orange-600">
+                      {summaryData.totalReturns.toFixed(2)} ج.م
+                    </p>
+                  </div>
+
+                  {/* المطلوب من المندوب */}
+                  <div className="p-4 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                    <p className="text-sm text-muted-foreground mb-1">إجمالي المطلوب</p>
+                    <p className="text-2xl font-bold text-purple-600">
+                      {summaryData.totalOwed.toFixed(2)} ج.م
+                    </p>
+                  </div>
+
+                  {/* أوردرات في الطريق */}
+                  <div className="p-4 bg-yellow-50 dark:bg-yellow-950/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                    <p className="text-sm text-muted-foreground mb-1">أوردرات في الطريق</p>
+                    <p className="text-2xl font-bold text-yellow-600">
+                      {summaryData.shippedCount} أوردر
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      بقيمة: {summaryData.shippedTotal.toFixed(2)} ج.م
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-center text-muted-foreground py-4">لا توجد بيانات</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Confirm Return Dialog */}
         <AlertDialog open={confirmReturnDialogOpen} onOpenChange={setConfirmReturnDialogOpen}>

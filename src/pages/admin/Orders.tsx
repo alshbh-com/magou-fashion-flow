@@ -97,16 +97,30 @@ const Orders = () => {
 
   const bulkAssignMutation = useMutation({
     mutationFn: async ({ orderIds, agentId, shippingCost }: { orderIds: string[]; agentId: string; shippingCost: number }) => {
-      const { error } = await supabase
-        .from("orders")
-        .update({ 
-          delivery_agent_id: agentId,
-          agent_shipping_cost: shippingCost,
-          status: 'shipped'
-        })
-        .in("id", orderIds);
-      
-      if (error) throw error;
+      // Get orders with their governorate to auto-set shipping if not specified
+      for (const orderId of orderIds) {
+        const order = orders?.find(o => o.id === orderId);
+        let finalShippingCost = shippingCost;
+        
+        // If shippingCost is 0 and order has governorate, use governorate shipping cost
+        if (shippingCost === 0 && order?.governorate_id) {
+          const gov = governorates?.find(g => g.id === order.governorate_id);
+          if (gov) {
+            finalShippingCost = parseFloat(gov.shipping_cost?.toString() || "0");
+          }
+        }
+        
+        const { error } = await supabase
+          .from("orders")
+          .update({ 
+            delivery_agent_id: agentId,
+            agent_shipping_cost: finalShippingCost,
+            status: 'shipped'
+          })
+          .eq("id", orderId);
+        
+        if (error) throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["orders"] });
