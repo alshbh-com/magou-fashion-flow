@@ -57,7 +57,14 @@ const AgentOrders = () => {
   const [newShipping, setNewShipping] = useState<string>("");
   
   // Summary states - default to today's date
-  const today = new Date().toISOString().split('T')[0];
+  const getTodayDate = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  const today = getTodayDate();
   const [summaryDateFilter, setSummaryDateFilter] = useState<string>(today);
   
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
@@ -181,29 +188,44 @@ const AgentOrders = () => {
   const calculateSummary = (dateFilter?: string) => {
     if (!agentPaymentsData || !allAgentOrders) return null;
 
+    const getLocalDate = (dateStr: string) => {
+      const d = new Date(dateStr);
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
     let paymentsToUse = agentPaymentsData;
     let ordersToUse = allAgentOrders;
 
     if (dateFilter) {
       paymentsToUse = agentPaymentsData.filter(p => {
-        const paymentDate = new Date(p.created_at || "").toISOString().split('T')[0];
+        const paymentDate = getLocalDate(p.created_at || "");
         return paymentDate === dateFilter;
       });
       ordersToUse = allAgentOrders.filter(o => {
-        const orderDate = new Date(o.created_at).toISOString().split('T')[0];
-        return orderDate === dateFilter;
+        // استخدام updated_at كتاريخ التعيين إن وجد، وإلا created_at
+        const assignDate = getLocalDate(o.updated_at || o.created_at);
+        return assignDate === dateFilter;
       });
     }
 
     const owedPayments = paymentsToUse.filter(p => p.payment_type === 'owed');
     const manualPayments = paymentsToUse.filter(p => p.payment_type === 'payment');
     const deliveredPayments = paymentsToUse.filter(p => p.payment_type === 'delivered');
+    const returnPayments = paymentsToUse.filter(p => p.payment_type === 'return');
+    const modificationPayments = paymentsToUse.filter(p => p.payment_type === 'modification');
 
     const totalOwed = owedPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
     const totalPaid = manualPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
     const totalDelivered = deliveredPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
+    // المرتجعات والتعديلات (قيم سالبة في الأصل)
+    const totalReturns = returnPayments.reduce((sum, p) => sum + Math.abs(parseFloat(p.amount.toString())), 0);
+    const totalModifications = modificationPayments.reduce((sum, p) => sum + Math.abs(parseFloat(p.amount.toString())), 0);
 
     // مستحقات على المندوب = المطلوب منه - المسلم - الدفعات المقدمة
+    // لا نخصم المرتجعات لأنها بالفعل تم خصمها من totalOwed عند تسجيلها
     const agentReceivables = totalOwed - totalDelivered - totalPaid;
 
     // حساب إحصائيات الأوردرات
@@ -225,23 +247,44 @@ const AgentOrders = () => {
       return sum + total + shipping - agentShipping;
     }, 0);
 
+    const returnedTotal = returnedOrders.reduce((sum, o) => {
+      const total = parseFloat(o.total_amount?.toString() || "0");
+      const shipping = parseFloat(o.shipping_cost?.toString() || "0");
+      const agentShipping = parseFloat(o.agent_shipping_cost?.toString() || "0");
+      return sum + total + shipping - agentShipping;
+    }, 0);
+
     return {
       totalOwed,
       totalPaid,
       totalDelivered,
+      totalReturns,
+      totalModifications,
       agentReceivables,
       shippedCount: shippedOrders.length,
       deliveredCount: deliveredOrders.length,
       returnedCount: returnedOrders.length,
       shippedTotal,
-      deliveredTotal
+      deliveredTotal,
+      returnedTotal
     };
   };
 
   const summaryData = calculateSummary(summaryDateFilter);
 
   // Get unique dates from orders for daily filter
-  const uniqueDates = [...new Set(allAgentOrders?.map(o => new Date(o.created_at).toISOString().split('T')[0]) || [])].sort().reverse();
+  const getLocalDateForOrder = (dateStr: string) => {
+    const d = new Date(dateStr);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  
+  // إضافة اليوم الحالي دائماً للقائمة
+  const orderDates = allAgentOrders?.map(o => getLocalDateForOrder(o.updated_at || o.created_at)) || [];
+  const allDates = [...new Set([today, ...orderDates])];
+  const uniqueDates = allDates.sort().reverse();
 
   // Add payment mutation
   const addPaymentMutation = useMutation({
@@ -1176,7 +1219,7 @@ const AgentOrders = () => {
                         <TableHead>شحن المندوب</TableHead>
                         <TableHead>الصافي</TableHead>
                         <TableHead>الحالة</TableHead>
-                        <TableHead>التاريخ</TableHead>
+                        <TableHead>تاريخ التعيين</TableHead>
                         <TableHead>إجراءات</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -1591,9 +1634,20 @@ const AgentOrders = () => {
 
                   {/* المطلوب من المندوب */}
                   <div className="p-4 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800">
-                    <p className="text-sm text-muted-foreground mb-1">إجمالي المطلوب</p>
+                    <p className="text-sm text-muted-foreground mb-1">المطلوب</p>
                     <p className="text-2xl font-bold text-purple-600">
                       {summaryData.totalOwed.toFixed(2)} ج.م
+                    </p>
+                  </div>
+
+                  {/* المرتجعات */}
+                  <div className="p-4 bg-orange-50 dark:bg-orange-950/20 rounded-lg border border-orange-200 dark:border-orange-800">
+                    <p className="text-sm text-muted-foreground mb-1">المرتجعات</p>
+                    <p className="text-2xl font-bold text-orange-600">
+                      {summaryData.returnedCount} أوردر
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      بقيمة: {summaryData.returnedTotal.toFixed(2)} ج.م
                     </p>
                   </div>
 
