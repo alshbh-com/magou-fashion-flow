@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -89,7 +89,7 @@ const AgentOrders = () => {
     },
   });
 
-  const { data: orders, isLoading } = useQuery({
+  const { data: orders, isLoading, refetch: refetchOrders } = useQuery({
     queryKey: ["agent-orders", selectedAgentId],
     queryFn: async () => {
       if (!selectedAgentId) return [];
@@ -107,13 +107,51 @@ const AgentOrders = () => {
         `)
         .eq("delivery_agent_id", selectedAgentId)
         .not("status", "in", '("delivered","returned","partially_returned","cancelled")')
-        .order("created_at", { ascending: false });
+        .order("updated_at", { ascending: false });
       
       if (error) throw error;
       return data;
     },
     enabled: !!selectedAgentId
   });
+
+  // Real-time updates for orders and agent_payments
+  useEffect(() => {
+    if (!selectedAgentId) return;
+
+    const ordersChannel = supabase
+      .channel('agent-orders-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders' },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["agent-orders", selectedAgentId] });
+          queryClient.invalidateQueries({ queryKey: ["all-agent-orders", selectedAgentId] });
+          queryClient.invalidateQueries({ queryKey: ["agent_payments_full", selectedAgentId] });
+          queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'agent_payments' },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["agent_payments_full", selectedAgentId] });
+          queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'delivery_agents' },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(ordersChannel);
+    };
+  }, [selectedAgentId, queryClient]);
 
   const { data: agentPayments } = useQuery({
     queryKey: ["agent_payments", selectedAgentId],
@@ -281,10 +319,27 @@ const AgentOrders = () => {
     return `${year}-${month}-${day}`;
   };
   
-  // إضافة اليوم الحالي دائماً للقائمة
-  const orderDates = allAgentOrders?.map(o => getLocalDateForOrder(o.updated_at || o.created_at)) || [];
-  const allDates = [...new Set([today, ...orderDates])];
-  const uniqueDates = allDates.sort().reverse();
+  // Get agent creation date for date range
+  const selectedAgent = agents?.find(a => a.id === selectedAgentId);
+  const agentCreatedAt = selectedAgent?.created_at ? getLocalDateForOrder(selectedAgent.created_at) : today;
+  
+  // Generate all dates from agent creation to today
+  const generateDateRange = (startDate: string, endDate: string) => {
+    const dates: string[] = [];
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    while (start <= end) {
+      const year = start.getFullYear();
+      const month = String(start.getMonth() + 1).padStart(2, '0');
+      const day = String(start.getDate()).padStart(2, '0');
+      dates.push(`${year}-${month}-${day}`);
+      start.setDate(start.getDate() + 1);
+    }
+    return dates;
+  };
+  
+  const uniqueDates = generateDateRange(agentCreatedAt, today).reverse();
 
   // Add payment mutation
   const addPaymentMutation = useMutation({
@@ -1052,6 +1107,90 @@ const AgentOrders = () => {
     printWindow.print();
   };
 
+  // Print summary function
+  const handlePrintSummary = () => {
+    if (!summaryData || !selectedAgentId) {
+      toast.error("لا توجد بيانات للطباعة");
+      return;
+    }
+
+    const agent = agents?.find(a => a.id === selectedAgentId);
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <html dir="rtl">
+        <head>
+          <title>ملخص مستحقات المندوب</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 20px; }
+            .logo { text-align: center; margin-bottom: 20px; }
+            .logo img { max-width: 150px; height: auto; }
+            h1 { text-align: center; margin: 10px 0; }
+            .info { margin: 20px 0; line-height: 2; }
+            .summary-item { 
+              display: flex; 
+              justify-content: space-between; 
+              padding: 10px; 
+              border-bottom: 1px solid #ddd; 
+            }
+            .summary-item.total { 
+              font-weight: bold; 
+              font-size: 18px; 
+              background-color: #f5f5f5; 
+            }
+            .label { color: #666; }
+            .value { font-weight: bold; }
+            .positive { color: green; }
+            .negative { color: red; }
+            hr { border: 1px solid #ddd; margin: 20px 0; }
+          </style>
+        </head>
+        <body>
+          <div class="logo">
+            <img src="/images/magou-logo.jpg" alt="Magou Fashion Logo" />
+          </div>
+          <h1>ملخص مستحقات المندوب</h1>
+          <hr/>
+          <div class="info">
+            <p><strong>المندوب:</strong> ${agent?.name || 'غير محدد'} (${agent?.serial_number || '-'})</p>
+            <p><strong>التاريخ:</strong> ${new Date(summaryDateFilter).toLocaleDateString('ar-EG')}</p>
+            <p><strong>تاريخ الطباعة:</strong> ${new Date().toLocaleString('ar-EG')}</p>
+          </div>
+          <hr/>
+          <div class="summary">
+            <div class="summary-item total ${summaryData.agentReceivables >= 0 ? 'negative' : 'positive'}">
+              <span class="label">مستحقات على المندوب</span>
+              <span class="value">${summaryData.agentReceivables.toFixed(2)} ج.م</span>
+            </div>
+            <div class="summary-item">
+              <span class="label">الأوردرات المسلمة</span>
+              <span class="value">${summaryData.totalDelivered.toFixed(2)} ج.م (${summaryData.deliveredCount} أوردر)</span>
+            </div>
+            <div class="summary-item">
+              <span class="label">الدفعة المقدمة</span>
+              <span class="value">${summaryData.totalPaid.toFixed(2)} ج.م</span>
+            </div>
+            <div class="summary-item">
+              <span class="label">المرتجعات</span>
+              <span class="value">${summaryData.returnedCount} أوردر (بقيمة ${summaryData.returnedTotal.toFixed(2)} ج.م)</span>
+            </div>
+            <div class="summary-item">
+              <span class="label">أوردرات في الطريق</span>
+              <span class="value">${summaryData.shippedCount} أوردر (بقيمة ${summaryData.shippedTotal.toFixed(2)} ج.م)</span>
+            </div>
+          </div>
+          <hr/>
+          <p style="text-align: center; font-size: 12px; color: #999;">
+            تم إنشاء هذا التقرير تلقائياً
+          </p>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-accent/20 py-8">
       <div className="container mx-auto px-4">
@@ -1344,8 +1483,48 @@ const AgentOrders = () => {
                             </AlertDialogContent>
                           </AlertDialog>
                          </TableCell>
+                         <TableCell className="text-sm text-muted-foreground">
+                           {order.updated_at 
+                             ? new Date(order.updated_at).toLocaleDateString('ar-EG', { 
+                                 year: 'numeric', 
+                                 month: 'short', 
+                                 day: 'numeric',
+                                 hour: '2-digit',
+                                 minute: '2-digit'
+                               })
+                             : new Date(order.created_at).toLocaleDateString('ar-EG', { 
+                                 year: 'numeric', 
+                                 month: 'short', 
+                                 day: 'numeric',
+                                 hour: '2-digit',
+                                 minute: '2-digit'
+                               })
+                           }
+                         </TableCell>
                          <TableCell>
                            <div className="flex gap-2 flex-wrap">
+                             <Button
+                               variant="ghost"
+                               size="icon"
+                               onClick={() => {
+                                 const phone = order.customers?.phone || "";
+                                 const formattedPhone = phone.startsWith("0") ? `+2${phone.substring(1)}` : phone;
+                                 const message = `مرحباً ${order.customers?.name}، تم شحن طلبك رقم #${order.order_number}. سيصلك قريباً مع مندوب التوصيل.`;
+                                 window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`, '_blank');
+                               }}
+                               title="تأكيد عبر واتساب"
+                               className="bg-green-500 hover:bg-green-600 text-white"
+                             >
+                               <MessageCircle className="h-4 w-4" />
+                             </Button>
+                             <Button
+                               variant="ghost"
+                               size="icon"
+                               onClick={() => handlePrintOrder(order)}
+                               title="طباعة الفاتورة"
+                             >
+                               <Printer className="h-4 w-4" />
+                             </Button>
                              <Button
                                variant="ghost"
                                size="icon"
@@ -1487,6 +1666,14 @@ const AgentOrders = () => {
               <div className="flex items-center justify-between flex-wrap gap-4">
                 <CardTitle>ملخص مستحقات المندوب</CardTitle>
                 <div className="flex items-center gap-2 flex-wrap">
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    onClick={() => handlePrintSummary()}
+                  >
+                    <Printer className="ml-2 h-4 w-4" />
+                    طباعة الملخص
+                  </Button>
                   <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
                     <DialogTrigger asChild>
                       <Button size="sm">
@@ -1631,14 +1818,6 @@ const AgentOrders = () => {
                     )}
                   </div>
 
-
-                  {/* المطلوب من المندوب */}
-                  <div className="p-4 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800">
-                    <p className="text-sm text-muted-foreground mb-1">المطلوب</p>
-                    <p className="text-2xl font-bold text-purple-600">
-                      {summaryData.totalOwed.toFixed(2)} ج.م
-                    </p>
-                  </div>
 
                   {/* المرتجعات */}
                   <div className="p-4 bg-orange-50 dark:bg-orange-950/20 rounded-lg border border-orange-200 dark:border-orange-800">
