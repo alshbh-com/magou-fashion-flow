@@ -56,17 +56,21 @@ const AgentOrders = () => {
   const [editingShipping, setEditingShipping] = useState<string | null>(null);
   const [newShipping, setNewShipping] = useState<string>("");
   
-  // Summary states - default to today's date
-  const getTodayDate = () => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+  // Summary states - default to today's date (Cairo time)
+  const getDateKey = (value: string | Date) => {
+    const d = typeof value === "string" ? new Date(value) : value;
+    // en-CA => YYYY-MM-DD
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Africa/Cairo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(d);
   };
-  const today = getTodayDate();
+
+  const today = getDateKey(new Date());
   const [summaryDateFilter, setSummaryDateFilter] = useState<string>(today);
-  
+
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState<string>("");
   const [editingField, setEditingField] = useState<string | null>(null);
@@ -226,50 +230,55 @@ const AgentOrders = () => {
   const calculateSummary = (dateFilter?: string) => {
     if (!agentPaymentsData || !allAgentOrders) return null;
 
-    const getLocalDate = (dateStr: string) => {
-      const d = new Date(dateStr);
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    };
-
     let paymentsToUse = agentPaymentsData;
     let ordersToUse = allAgentOrders;
 
     if (dateFilter) {
-      paymentsToUse = agentPaymentsData.filter(p => {
-        const paymentDate = getLocalDate(p.created_at || "");
+      paymentsToUse = agentPaymentsData.filter((p) => {
+        const paymentDate = getDateKey(p.created_at || "");
         return paymentDate === dateFilter;
       });
-      ordersToUse = allAgentOrders.filter(o => {
+
+      ordersToUse = allAgentOrders.filter((o) => {
         // استخدام updated_at كتاريخ التعيين إن وجد، وإلا created_at
-        const assignDate = getLocalDate(o.updated_at || o.created_at);
+        const assignDate = getDateKey(o.updated_at || o.created_at);
         return assignDate === dateFilter;
       });
     }
 
-    const owedPayments = paymentsToUse.filter(p => p.payment_type === 'owed');
-    const manualPayments = paymentsToUse.filter(p => p.payment_type === 'payment');
-    const deliveredPayments = paymentsToUse.filter(p => p.payment_type === 'delivered');
-    const returnPayments = paymentsToUse.filter(p => p.payment_type === 'return');
-    const modificationPayments = paymentsToUse.filter(p => p.payment_type === 'modification');
+    const owedPayments = paymentsToUse.filter((p) => p.payment_type === "owed");
+    const manualPayments = paymentsToUse.filter((p) => p.payment_type === "payment");
+    const deliveredPayments = paymentsToUse.filter((p) => p.payment_type === "delivered");
+    const returnPayments = paymentsToUse.filter((p) => p.payment_type === "return");
+    const modificationPayments = paymentsToUse.filter((p) => p.payment_type === "modification");
 
-    const totalOwed = owedPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
-    const totalPaid = manualPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
-    const totalDelivered = deliveredPayments.reduce((sum, p) => sum + parseFloat(p.amount.toString()), 0);
-    // المرتجعات والتعديلات (قيم سالبة في الأصل)
-    const totalReturns = returnPayments.reduce((sum, p) => sum + Math.abs(parseFloat(p.amount.toString())), 0);
-    const totalModifications = modificationPayments.reduce((sum, p) => sum + Math.abs(parseFloat(p.amount.toString())), 0);
+    const sumAmount = (arr: any[]) =>
+      arr.reduce((sum, p) => sum + parseFloat((p.amount ?? 0).toString()), 0);
 
-    // مستحقات على المندوب = المطلوب منه - المسلم - الدفعات المقدمة
-    // لا نخصم المرتجعات لأنها بالفعل تم خصمها من totalOwed عند تسجيلها
-    const agentReceivables = totalOwed - totalDelivered - totalPaid;
+    const totalOwed = sumAmount(owedPayments);
+    const totalPaid = sumAmount(manualPayments);
+    const totalDelivered = sumAmount(deliveredPayments);
+
+    // إشارات موجبة/سالبة كما هي في جدول agent_payments
+    const totalReturnsSigned = sumAmount(returnPayments); // غالباً سالبة
+    const totalModificationsSigned = sumAmount(modificationPayments);
+
+    // للعرض فقط
+    const totalReturns = Math.abs(totalReturnsSigned);
+    const totalModifications = Math.abs(totalModificationsSigned);
+
+    // صافي المطلوب (حركة اليوم) = المطلوب + التعديلات + المرتجعات(سالبة)
+    const netRequired = totalOwed + totalModificationsSigned + totalReturnsSigned;
+
+    // الصافي على المندوب = صافي المطلوب - المسلم - الدفعات المقدمة
+    const agentReceivables = netRequired - totalDelivered - totalPaid;
 
     // حساب إحصائيات الأوردرات
-    const shippedOrders = ordersToUse.filter(o => o.status === 'shipped');
-    const deliveredOrders = ordersToUse.filter(o => o.status === 'delivered');
-    const returnedOrders = ordersToUse.filter(o => ['returned', 'return_no_shipping', 'partially_returned'].includes(o.status || ''));
+    const shippedOrders = ordersToUse.filter((o) => o.status === "shipped");
+    const deliveredOrders = ordersToUse.filter((o) => o.status === "delivered");
+    const returnedOrders = ordersToUse.filter((o) =>
+      ["returned", "return_no_shipping", "partially_returned"].includes(o.status || "")
+    );
 
     const shippedTotal = shippedOrders.reduce((sum, o) => {
       const total = parseFloat(o.total_amount?.toString() || "0");
@@ -298,27 +307,24 @@ const AgentOrders = () => {
       totalDelivered,
       totalReturns,
       totalModifications,
+      totalReturnsSigned,
+      totalModificationsSigned,
+      netRequired,
       agentReceivables,
       shippedCount: shippedOrders.length,
       deliveredCount: deliveredOrders.length,
       returnedCount: returnedOrders.length,
       shippedTotal,
       deliveredTotal,
-      returnedTotal
+      returnedTotal,
     };
   };
 
   const summaryData = calculateSummary(summaryDateFilter);
 
   // Get unique dates from orders for daily filter
-  const getLocalDateForOrder = (dateStr: string) => {
-    const d = new Date(dateStr);
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-  
+  const getLocalDateForOrder = (dateStr: string) => getDateKey(dateStr);
+
   // Get agent creation date for date range
   const selectedAgent = agents?.find(a => a.id === selectedAgentId);
   const agentCreatedAt = selectedAgent?.created_at ? getLocalDateForOrder(selectedAgent.created_at) : today;
@@ -1730,14 +1736,14 @@ const AgentOrders = () => {
             <CardContent>
               {summaryData ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {/* مستحقات على المندوب */}
+                  {/* الصافي المطلوب من المندوب (يومي) */}
                   <div className="p-4 bg-red-50 dark:bg-red-950/20 rounded-lg border border-red-200 dark:border-red-800">
-                    <p className="text-sm text-muted-foreground mb-1">مستحقات على المندوب</p>
+                    <p className="text-sm text-muted-foreground mb-1">الصافي المطلوب من المندوب (اليوم)</p>
                     <p className={`text-2xl font-bold ${summaryData.agentReceivables >= 0 ? 'text-red-600' : 'text-green-600'}`}>
                       {summaryData.agentReceivables.toFixed(2)} ج.م
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      = المطلوب ({summaryData.totalOwed.toFixed(2)}) - المسلم ({summaryData.totalDelivered.toFixed(2)}) - الدفعات ({summaryData.totalPaid.toFixed(2)})
+                      = صافي المطلوب ({summaryData.netRequired.toFixed(2)}) - المسلم ({summaryData.totalDelivered.toFixed(2)}) - الدفعات ({summaryData.totalPaid.toFixed(2)})
                     </p>
                   </div>
 
