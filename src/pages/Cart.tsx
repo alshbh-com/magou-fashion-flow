@@ -203,41 +203,10 @@ const Cart = () => {
         const oldShippingCost = parseFloat(existingOrder.shipping_cost?.toString() || "0");
         const deltaTotal = (totalAfterDiscount + newShippingCost) - (oldTotalAmount + oldShippingCost);
 
-        // لو فيه مندوب على الأوردر: 
-        // - لو زودنا إجمالي الأوردر => تزود مستحقات على المندوب
-        // - لو نقصنا (نقص قطع) => تتخصم من مستحقات المندوب وتضاف لباقي من المرتجع
-        if (existingOrder.delivery_agent_id && deltaTotal !== 0) {
-          const { data: agent, error: agentFetchError } = await supabase
-            .from("delivery_agents")
-            .select("total_owed")
-            .eq("id", existingOrder.delivery_agent_id)
-            .single();
+        // لو فيه مندوب على الأوردر: تعديل مستحقات المندوب يتم تلقائياً من Trigger قاعدة البيانات
+        // handle_order_amount_modification، لذلك لا نعدّل total_owed ولا نضيف agent_payments من الواجهة هنا
+        // لتجنب تكرار الخصم/الإضافة (×2).
 
-          if (agentFetchError) throw agentFetchError;
-
-          const currentOwed = parseFloat(agent.total_owed?.toString() || "0");
-          const newOwed = currentOwed + deltaTotal;
-
-          const { error: agentUpdateError } = await supabase
-            .from("delivery_agents")
-            .update({ total_owed: newOwed })
-            .eq("id", existingOrder.delivery_agent_id);
-
-          if (agentUpdateError) throw agentUpdateError;
-
-          const paymentType = deltaTotal > 0 ? "owed" : "return";
-          const { error: paymentError } = await supabase
-            .from("agent_payments")
-            .insert({
-              delivery_agent_id: existingOrder.delivery_agent_id,
-              order_id: returnOrderId,
-              amount: deltaTotal,
-              payment_type: paymentType,
-              notes: `تعديل طلب رقم ${existingOrder.order_number ?? returnOrderId.slice(0, 8)} - ${deltaTotal > 0 ? 'إضافة' : 'خصم'} ${Math.abs(deltaTotal).toFixed(2)} ج.م`
-            });
-
-          if (paymentError) throw paymentError;
-        }
 
         // Update existing order
         const { error: orderError } = await supabase
