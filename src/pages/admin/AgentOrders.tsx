@@ -240,15 +240,21 @@ const AgentOrders = () => {
     let ordersToUse = allAgentOrders;
 
     if (dateFilter) {
-      paymentsToUse = agentPaymentsData.filter((p) => {
-        const paymentDate = getDateKey(p.created_at || "");
-        return paymentDate === dateFilter;
+      // ✅ اليوميات تعتمد على تاريخ تعيين الأوردر (assigned_at) وليس تاريخ آخر تعديل
+      const orderDateById = new Map<string, string>();
+      allAgentOrders.forEach((o) => {
+        if (!o?.id) return;
+        orderDateById.set(o.id, getDateKey(getOrderDate(o)));
       });
 
-      ordersToUse = allAgentOrders.filter((o) => {
-        // ✅ التغيير: استخدام تاريخ الأوردر الثابت (assigned_at أو created_at)
-        const orderDate = getDateKey(getOrderDate(o));
-        return orderDate === dateFilter;
+      ordersToUse = allAgentOrders.filter((o) => orderDateById.get(o.id) === dateFilter);
+
+      // العمليات المرتبطة بأوردر (owed/delivered/return/modification) تُحسب على يوم تعيين الأوردر
+      // الدفعات غير المرتبطة بأوردر (payment بدون order_id) تظل على تاريخها
+      paymentsToUse = agentPaymentsData.filter((p) => {
+        if (p.order_id) return orderDateById.get(p.order_id) === dateFilter;
+        const paymentDate = getDateKey(p.created_at || "");
+        return paymentDate === dateFilter;
       });
     }
 
@@ -500,10 +506,10 @@ const AgentOrders = () => {
     
     // Single date filter (priority)
     if (singleDateFilter) {
-      const orderDate = new Date(getOrderDate(order)).toISOString().split('T')[0]; // ✅ استخدام التاريخ الثابت
+      const orderDate = getDateKey(getOrderDate(order));
       if (orderDate !== singleDateFilter) return false;
     } else if (startDate || endDate) {
-      const orderDate = new Date(getOrderDate(order)).toISOString().split('T')[0]; // ✅ استخدام التاريخ الثابت
+      const orderDate = getDateKey(getOrderDate(order));
       if (startDate && orderDate < startDate) return false;
       if (endDate && orderDate > endDate) return false;
     }
@@ -1114,7 +1120,7 @@ const AgentOrders = () => {
           <div class="info">
             <p><strong>المندوب:</strong> ${agent?.name || 'غير محدد'} (${agent?.serial_number || '-'})</p>
             <p><strong>تاريخ الأوردرات:</strong> ${new Date(summaryDateFilter).toLocaleDateString('ar-EG')}</p>
-            <p><strong>ملاحظة:</strong> الحسابات تعتمد على تاريخ إنشاء الأوردر الأصلي (created_at)</p>
+            <p><strong>ملاحظة:</strong> الحسابات تعتمد على تاريخ تعيين الأوردر (assigned_at) وليس تاريخ آخر تعديل</p>
             <p><strong>تاريخ الطباعة:</strong> ${new Date().toLocaleString('ar-EG')}</p>
           </div>
           <hr/>
@@ -1142,7 +1148,7 @@ const AgentOrders = () => {
           </div>
           <hr/>
           <p style="text-align: center; font-size: 12px; color: #999;">
-            تم إنشاء هذا التقرير تلقائياً - نظام الإحصائيات يعتمد على تاريخ إنشاء الأوردر الأصلي
+            تم إنشاء هذا التقرير تلقائياً - نظام الإحصائيات يعتمد على تاريخ تعيين الأوردر (assigned_at)
           </p>
         </body>
       </html>
@@ -1170,6 +1176,7 @@ const AgentOrders = () => {
                 </Button>
               )}
             </div>
+
             <div className="mt-4 space-y-4">
               <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
                 <SelectTrigger className="w-64">
@@ -1197,6 +1204,7 @@ const AgentOrders = () => {
                         className="w-64"
                       />
                     </div>
+
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">فلتر حسب الحالة:</span>
                       <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -1213,8 +1221,9 @@ const AgentOrders = () => {
                         </SelectContent>
                       </Select>
                     </div>
+
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">تاريخ الأوردر:</span> <!-- ✅ تغيير النص -->
+                      <span className="text-sm font-medium">تاريخ التعيين:</span>
                       <Input
                         type="date"
                         value={singleDateFilter}
@@ -1233,8 +1242,9 @@ const AgentOrders = () => {
                         </Button>
                       )}
                     </div>
+
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">من تاريخ الأوردر:</span> <!-- ✅ تغيير النص -->
+                      <span className="text-sm font-medium">من تاريخ التعيين:</span>
                       <Input
                         type="date"
                         value={startDate}
@@ -1245,8 +1255,9 @@ const AgentOrders = () => {
                         className="w-40"
                       />
                     </div>
+
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">إلى تاريخ الأوردر:</span> <!-- ✅ تغيير النص -->
+                      <span className="text-sm font-medium">إلى تاريخ التعيين:</span>
                       <Input
                         type="date"
                         value={endDate}
@@ -1257,20 +1268,24 @@ const AgentOrders = () => {
                         className="w-40"
                       />
                     </div>
+
                     {(startDate || endDate) && (
-                      <Button size="sm" variant="ghost" onClick={() => {
-                        setStartDate("");
-                        setEndDate("");
-                      }}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setStartDate("");
+                          setEndDate("");
+                        }}
+                      >
                         إلغاء
                       </Button>
                     )}
                   </div>
-                   {selectedOrders.length > 0 && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground">
-                        {selectedOrders.length} محدد
-                      </span>
+
+                  {selectedOrders.length > 0 && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm text-muted-foreground">{selectedOrders.length} محدد</span>
                       <Button onClick={handleExportExcel} size="sm" variant="outline">
                         <Download className="ml-2 h-4 w-4" />
                         تصدير Excel
@@ -1279,8 +1294,449 @@ const AgentOrders = () => {
                         <Printer className="ml-2 h-4 w-4" />
                         طباعة
                       </Button>
-                      <Button 
-                        onClick={() => setBulkStatusDialogOpen(true)} 
-                        size="sm" 
-                        variant="default"
-             
+                      <Button onClick={() => setBulkStatusDialogOpen(true)} size="sm">
+                        <ChevronDown className="ml-2 h-4 w-4" />
+                        تغيير حالة (مجمع)
+                      </Button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </CardHeader>
+
+          <CardContent>
+            {!selectedAgentId ? (
+              <p className="text-center text-muted-foreground py-10">اختر مندوب لعرض الأوردرات والملخص.</p>
+            ) : isLoading ? (
+              <p className="text-center text-muted-foreground py-10">جاري التحميل...</p>
+            ) : !filteredOrders || filteredOrders.length === 0 ? (
+              <p className="text-center text-muted-foreground py-10">لا توجد أوردرات لهذا المندوب.</p>
+            ) : (
+              <div className="space-y-6">
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-12">
+                          <Checkbox
+                            checked={selectedOrders.length === filteredOrders.length}
+                            onCheckedChange={toggleSelectAll}
+                          />
+                        </TableHead>
+                        <TableHead>رقم</TableHead>
+                        <TableHead>العميل</TableHead>
+                        <TableHead>الهاتف</TableHead>
+                        <TableHead>المحافظة</TableHead>
+                        <TableHead>الصافي</TableHead>
+                        <TableHead>الحالة</TableHead>
+                        <TableHead>تاريخ التعيين</TableHead>
+                        <TableHead>آخر تعديل</TableHead>
+                        <TableHead>إجراءات</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredOrders.map((order) => {
+                        const customerShipping = parseFloat(order.shipping_cost?.toString() || "0");
+                        const agentShipping = parseFloat(order.agent_shipping_cost?.toString() || "0");
+                        const totalAmount = parseFloat(order.total_amount?.toString() || "0");
+                        const netAmount = totalAmount + customerShipping - agentShipping;
+
+                        return (
+                          <TableRow key={order.id}>
+                            <TableCell>
+                              <Checkbox
+                                checked={selectedOrders.includes(order.id)}
+                                onCheckedChange={() => toggleOrderSelection(order.id)}
+                              />
+                            </TableCell>
+
+                            <TableCell className="font-mono text-xs">#{order.order_number || order.id.slice(0, 8)}</TableCell>
+                            <TableCell className="font-medium">{order.customers?.name || "-"}</TableCell>
+                            <TableCell>{order.customers?.phone || "-"}</TableCell>
+                            <TableCell>{order.customers?.governorate || "-"}</TableCell>
+                            <TableCell className="font-bold">{netAmount.toFixed(2)} ج.م</TableCell>
+                            <TableCell>
+                              <Badge className={statusColors[order.status] || "bg-gray-500"}>
+                                {statusLabels[order.status] || order.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>{new Date(getOrderDate(order)).toLocaleDateString("ar-EG")}</TableCell>
+                            <TableCell>
+                              {order.updated_at ? new Date(order.updated_at).toLocaleDateString("ar-EG") : "-"}
+                            </TableCell>
+
+                            <TableCell>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Button size="sm" variant="outline" onClick={() => handlePrintOrder(order)}>
+                                  <Printer className="ml-2 h-4 w-4" />
+                                  طباعة
+                                </Button>
+
+                                <Button size="sm" variant="outline" onClick={() => handleOpenReturnDialog(order)}>
+                                  <PackageX className="ml-2 h-4 w-4" />
+                                  مرتجع
+                                </Button>
+
+                                <Button size="sm" variant="outline" onClick={() => unassignAgentMutation.mutate(order.id)}>
+                                  <ArrowDown className="ml-2 h-4 w-4" />
+                                  إلغاء التعيين
+                                </Button>
+
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button size="sm" variant="destructive">
+                                      <Trash2 className="ml-2 h-4 w-4" />
+                                      حذف
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        هل أنت متأكد من حذف هذا الأوردر؟ سيتم حذف بياناته ودفعاته المرتبطة.
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                                      <AlertDialogAction onClick={() => deleteOrderMutation.mutate(order.id)}>
+                                        حذف
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+
+                                {/* تعديل شحن المندوب */}
+                                {editingShipping === order.id ? (
+                                  <div className="flex items-center gap-2">
+                                    <Input
+                                      type="number"
+                                      value={newShipping}
+                                      onChange={(e) => setNewShipping(e.target.value)}
+                                      className="w-24"
+                                      min="0"
+                                    />
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        const value = parseFloat(newShipping);
+                                        if (isNaN(value) || value < 0) return toast.error("قيمة غير صحيحة");
+                                        updateShippingMutation.mutate({
+                                          orderId: order.id,
+                                          newShipping: value,
+                                          oldShipping: parseFloat(order.agent_shipping_cost?.toString() || "0"),
+                                          agentId: order.delivery_agent_id,
+                                        });
+                                        setEditingShipping(null);
+                                        setNewShipping("");
+                                      }}
+                                    >
+                                      حفظ
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => {
+                                        setEditingShipping(null);
+                                        setNewShipping("");
+                                      }}
+                                    >
+                                      إلغاء
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setEditingShipping(order.id);
+                                      setNewShipping(order.agent_shipping_cost?.toString() || "0");
+                                    }}
+                                  >
+                                    <Edit2 className="ml-2 h-4 w-4" />
+                                    شحن المندوب
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {/* الملخص */}
+                <div ref={summaryRef} />
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between flex-wrap gap-4">
+                      <CardTitle>ملخص اليوميات (حسب تاريخ التعيين)</CardTitle>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Select value={summaryDateFilter} onValueChange={setSummaryDateFilter}>
+                          <SelectTrigger className="w-44">
+                            <SelectValue placeholder="اختر يوم" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {uniqueDates.map((d) => (
+                              <SelectItem key={d} value={d}>
+                                {d}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button variant="outline" size="sm" onClick={handlePrintSummary}>
+                          <Printer className="ml-2 h-4 w-4" />
+                          طباعة الملخص
+                        </Button>
+                        <Button variant="default" size="sm" onClick={() => setPaymentDialogOpen(true)}>
+                          <Plus className="ml-2 h-4 w-4" />
+                          إضافة دفعة
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {!summaryData ? (
+                      <p className="text-muted-foreground">لا توجد بيانات للملخص.</p>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div className="rounded-lg border p-4">
+                          <div className="text-sm text-muted-foreground">صافي المطلوب (اليوم)</div>
+                          <div className="text-2xl font-bold mt-1">{summaryData.netRequired.toFixed(2)} ج.م</div>
+                        </div>
+
+                        <div className="rounded-lg border p-4">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-sm text-muted-foreground">الأوردرات المسلمة</div>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => {
+                                setEditingField("delivered");
+                                setEditingValue((summaryData.totalDelivered || 0).toString());
+                              }}
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          <div className="text-2xl font-bold mt-1">{summaryData.totalDelivered.toFixed(2)} ج.م</div>
+                        </div>
+
+                        <div className="rounded-lg border p-4">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-sm text-muted-foreground">الدفعة المقدمة</div>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => {
+                                setEditingField("payment");
+                                setEditingValue((summaryData.totalPaid || 0).toString());
+                              }}
+                            >
+                              <Edit2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          <div className="text-2xl font-bold mt-1">{summaryData.totalPaid.toFixed(2)} ج.م</div>
+                        </div>
+
+                        <div className="rounded-lg border p-4">
+                          <div className="text-sm text-muted-foreground">الصافي المطلوب من المندوب</div>
+                          <div className="text-2xl font-bold mt-1">{summaryData.agentReceivables.toFixed(2)} ج.م</div>
+                        </div>
+
+                        <div className="rounded-lg border p-4">
+                          <div className="text-sm text-muted-foreground">المرتجعات</div>
+                          <div className="text-lg font-semibold mt-1">{summaryData.returnedCount} أوردر</div>
+                          <div className="text-sm text-muted-foreground mt-1">بقيمة {summaryData.returnedTotal.toFixed(2)} ج.م</div>
+                        </div>
+
+                        <div className="rounded-lg border p-4">
+                          <div className="text-sm text-muted-foreground">في الطريق</div>
+                          <div className="text-lg font-semibold mt-1">{summaryData.shippedCount} أوردر</div>
+                          <div className="text-sm text-muted-foreground mt-1">بقيمة {summaryData.shippedTotal.toFixed(2)} ج.م</div>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Dialog: تغيير حالة مجمع */}
+        <Dialog open={bulkStatusDialogOpen} onOpenChange={setBulkStatusDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>تغيير حالة الأوردرات المحددة</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>الحالة الجديدة</Label>
+                <Select value={bulkStatus} onValueChange={setBulkStatus}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="اختر حالة" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(statusLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => setBulkStatusDialogOpen(false)}>
+                  إلغاء
+                </Button>
+                <Button onClick={handleBulkStatusUpdate}>تطبيق</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog: إضافة دفعة */}
+        <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>إضافة دفعة مقدمة</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>المبلغ</Label>
+                <Input
+                  type="number"
+                  value={paymentAmount}
+                  onChange={(e) => setPaymentAmount(e.target.value)}
+                  placeholder="مثال: 500"
+                  min="0"
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => setPaymentDialogOpen(false)}>
+                  إلغاء
+                </Button>
+                <Button onClick={handleAddPayment}>إضافة</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog: تعديل قيم الملخص */}
+        <Dialog
+          open={!!editingField}
+          onOpenChange={(open) => {
+            if (!open) {
+              setEditingField(null);
+              setEditingValue("");
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>تعديل قيمة الملخص</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>القيمة الجديدة</Label>
+                <Input type="number" value={editingValue} onChange={(e) => setEditingValue(e.target.value)} />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setEditingField(null);
+                    setEditingValue("");
+                  }}
+                >
+                  إلغاء
+                </Button>
+                <Button onClick={handleEditSummary}>حفظ</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog: المرتجع */}
+        <Dialog open={returnDialogOpen} onOpenChange={setReturnDialogOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>تسجيل مرتجع</DialogTitle>
+            </DialogHeader>
+
+            {!selectedOrderForReturn ? (
+              <p className="text-muted-foreground">لا يوجد أوردر محدد.</p>
+            ) : (
+              <div className="space-y-4">
+                <div className="rounded-lg border p-3 text-sm">
+                  <div className="font-medium">
+                    أوردر #{selectedOrderForReturn.order_number || selectedOrderForReturn.id.slice(0, 8)}
+                  </div>
+                  <div className="text-muted-foreground mt-1">
+                    {selectedOrderForReturn.customers?.name} - {selectedOrderForReturn.customers?.phone}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>القطع المرتجعة</Label>
+                  <div className="space-y-2">
+                    {returnData.returned_items.map((item, idx) => (
+                      <div key={idx} className="flex items-center gap-3 flex-wrap rounded-lg border p-3">
+                        <div className="flex-1 min-w-[200px]">
+                          <div className="font-medium">{item.product_name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            سعر: {item.price.toFixed(2)} | الكمية: {item.total_quantity}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label className="text-xs">مرتجع</Label>
+                          <Input
+                            type="number"
+                            value={item.returned_quantity}
+                            min={0}
+                            max={item.total_quantity}
+                            className="w-24"
+                            onChange={(e) => handleReturnQuantityChange(idx, parseInt(e.target.value || "0", 10))}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    checked={returnData.removeShipping}
+                    onCheckedChange={(checked) => setReturnData({ ...returnData, removeShipping: Boolean(checked) })}
+                  />
+                  <span className="text-sm">مرتجع دون شحن</span>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>ملاحظات</Label>
+                  <Textarea
+                    value={returnData.notes}
+                    onChange={(e) => setReturnData({ ...returnData, notes: e.target.value })}
+                    rows={3}
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  <Button variant="ghost" onClick={() => setReturnDialogOpen(false)}>
+                    إلغاء
+                  </Button>
+                  <Button onClick={handleSubmitReturn}>تسجيل المرتجع</Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+      </div>
+    </div>
+  );
+};
+
+export default AgentOrders;
+
