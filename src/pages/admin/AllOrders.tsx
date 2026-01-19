@@ -152,11 +152,17 @@ const AllOrders = () => {
               .eq("id", order.delivery_agent_id);
             
             // Create payment record for the return (negative amount)
+            // استخدم تاريخ تعيين الأوردر كـ payment_date
+            const assignedDate = (order as any).assigned_at 
+              ? new Date((order as any).assigned_at).toISOString().split('T')[0]
+              : new Date(order.created_at).toISOString().split('T')[0];
+            
             await supabase.from("agent_payments").insert({
               delivery_agent_id: order.delivery_agent_id,
               order_id: orderId,
               amount: -returnAmount,
               payment_type: 'return',
+              payment_date: assignedDate,
               notes: `مرتجع كامل - أوردر #${order.order_number || orderId.slice(0, 8)}`
             });
           }
@@ -246,6 +252,11 @@ const AllOrders = () => {
         if (agentUpdateError) throw agentUpdateError;
         
         // Create payment record for the return (negative amount to show in "باقي من المرتجع")
+        // استخدم تاريخ تعيين الأوردر كـ payment_date
+        const assignedDate = (selectedOrderForReturn as any).assigned_at 
+          ? new Date((selectedOrderForReturn as any).assigned_at).toISOString().split('T')[0]
+          : new Date(selectedOrderForReturn.created_at).toISOString().split('T')[0];
+        
         const { error: paymentError } = await supabase
           .from("agent_payments")
           .insert({
@@ -253,6 +264,7 @@ const AllOrders = () => {
             order_id: selectedOrderForReturn.id,
             amount: -returnAmount,
             payment_type: 'return',
+            payment_date: assignedDate,
             notes: `مرتجع جزئي - ${returnedItems.map(i => `${i.product_name} × ${i.returned_quantity} (${i.returned_quantity * i.price} ج.م)`).join(", ")}`
           });
         
