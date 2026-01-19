@@ -73,8 +73,27 @@ const AgentOrders = () => {
 
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState<string>("");
+  const [paymentDate, setPaymentDate] = useState<string>(today); // تاريخ الدفعة
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState<string>("");
+
+  // Generate last 10 days for payment date selection
+  const generatePaymentDateOptions = () => {
+    const options: { value: string; label: string }[] = [];
+    for (let i = 0; i < 10; i++) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      const dateKey = getDateKey(date);
+      const label = i === 0 ? "اليوم" : i === 1 ? "أمس" : new Intl.DateTimeFormat("ar-EG", {
+        weekday: "short",
+        day: "numeric",
+        month: "short"
+      }).format(date);
+      options.push({ value: dateKey, label: `${label} (${dateKey})` });
+    }
+    return options;
+  };
+  const paymentDateOptions = generatePaymentDateOptions();
 
   const scrollToSummary = () => {
     summaryRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -234,9 +253,11 @@ const AgentOrders = () => {
     let ordersToUse = allAgentOrders;
 
     if (dateFilter) {
+      // فلترة الدفعات بناءً على payment_date (التاريخ المختار) وليس created_at
       paymentsToUse = agentPaymentsData.filter((p) => {
-        const paymentDate = getDateKey(p.created_at || "");
-        return paymentDate === dateFilter;
+        // استخدم payment_date إذا موجود، وإلا استخدم created_at
+        const pDate = (p as any).payment_date || getDateKey(p.created_at || "");
+        return pDate === dateFilter;
       });
 
       ordersToUse = allAgentOrders.filter((o) => {
@@ -349,7 +370,7 @@ const AgentOrders = () => {
 
   // Add payment mutation
   const addPaymentMutation = useMutation({
-    mutationFn: async (amount: number) => {
+    mutationFn: async ({ amount, selectedDate }: { amount: number; selectedDate: string }) => {
       if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
 
       const { error } = await supabase
@@ -358,7 +379,8 @@ const AgentOrders = () => {
           delivery_agent_id: selectedAgentId,
           amount: amount,
           payment_type: 'payment',
-          notes: `دفعة مقدمة - ${amount.toFixed(2)} ج.م`
+          payment_date: selectedDate,
+          notes: `دفعة مقدمة - ${amount.toFixed(2)} ج.م (${selectedDate})`
         });
 
       if (error) throw error;
@@ -385,6 +407,7 @@ const AgentOrders = () => {
       toast.success("تم إضافة الدفعة بنجاح");
       setPaymentDialogOpen(false);
       setPaymentAmount("");
+      setPaymentDate(today);
     },
     onError: () => {
       toast.error("حدث خطأ أثناء إضافة الدفعة");
@@ -418,6 +441,7 @@ const AgentOrders = () => {
           delivery_agent_id: selectedAgentId,
           amount: amount,
           payment_type: paymentType,
+          payment_date: summaryDateFilter, // استخدم التاريخ المحدد في الملخص
           notes: `تعديل يدوي - ${difference > 0 ? 'إضافة' : 'خصم'} ${Math.abs(difference).toFixed(2)} ج.م`
         });
 
@@ -441,7 +465,7 @@ const AgentOrders = () => {
       toast.error("يرجى إدخال مبلغ صحيح");
       return;
     }
-    addPaymentMutation.mutate(amount);
+    addPaymentMutation.mutate({ amount, selectedDate: paymentDate });
   };
 
   const handleEditSummary = () => {
@@ -529,7 +553,7 @@ const AgentOrders = () => {
   });
 
   const updateShippingMutation = useMutation({
-    mutationFn: async ({ orderId, newShipping, oldShipping, agentId }: { orderId: string; newShipping: number; oldShipping: number; agentId: string }) => {
+    mutationFn: async ({ orderId, newShipping, oldShipping, agentId, assignedAt }: { orderId: string; newShipping: number; oldShipping: number; agentId: string; assignedAt?: string }) => {
       // Update order agent shipping cost (the cost the agent pays, which reduces what they owe)
       const { error: orderError } = await supabase
         .from("orders")
@@ -561,6 +585,11 @@ const AgentOrders = () => {
 
       // Add a payment record for the adjustment
       if (difference !== 0) {
+        // استخدم تاريخ التعيين للأوردر
+        const paymentDate = assignedAt 
+          ? new Date(assignedAt).toISOString().split('T')[0]
+          : today;
+        
         const { error: paymentError } = await supabase
           .from("agent_payments")
           .insert({
@@ -568,6 +597,7 @@ const AgentOrders = () => {
             order_id: orderId,
             amount: difference,
             payment_type: 'owed',
+            payment_date: paymentDate,
             notes: `تعديل شحن المندوب - فرق ${difference > 0 ? '+' : ''}${difference.toFixed(2)} ج.م`
           });
         
@@ -1337,7 +1367,8 @@ const AgentOrders = () => {
                                         orderId: order.id,
                                         newShipping: parseFloat(newShipping),
                                         oldShipping: agentShipping,
-                                        agentId: order.delivery_agent_id!
+                                        agentId: order.delivery_agent_id!,
+                                        assignedAt: (order as any).assigned_at || order.updated_at || order.created_at
                                       });
                                       setEditingShipping(null);
                                     }}
@@ -1618,12 +1649,30 @@ const AgentOrders = () => {
                             placeholder="أدخل المبلغ"
                           />
                         </div>
+                        <div>
+                          <Label>إضافة الدفعة ليوم</Label>
+                          <Select value={paymentDate} onValueChange={setPaymentDate}>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="اختر التاريخ" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {paymentDateOptions.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                         <p className="text-sm text-muted-foreground">
-                          سيتم خصم هذا المبلغ من مستحقات المندوب
+                          سيتم إضافة هذه الدفعة ليوم {paymentDate === today ? "اليوم" : paymentDate}
                         </p>
                       </div>
                       <div className="flex justify-end gap-2">
-                        <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>
+                        <Button variant="outline" onClick={() => {
+                          setPaymentDialogOpen(false);
+                          setPaymentDate(today);
+                        }}>
                           إلغاء
                         </Button>
                         <Button onClick={handleAddPayment}>
