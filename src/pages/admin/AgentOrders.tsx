@@ -1445,6 +1445,7 @@ const AgentOrders = () => {
                         <TableHead>العميل</TableHead>
                         <TableHead>الهاتف</TableHead>
                         <TableHead>العنوان</TableHead>
+                        <TableHead>المنتجات</TableHead>
                         <TableHead>الإجمالي</TableHead>
                         <TableHead>شحن المندوب</TableHead>
                         <TableHead>الصافي</TableHead>
@@ -1478,6 +1479,18 @@ const AgentOrders = () => {
                             <TableCell>{order.customers?.phone}</TableCell>
                             <TableCell className="max-w-xs whitespace-normal break-words">
                               {order.customers?.address}
+                            </TableCell>
+                            <TableCell className="max-w-[200px]">
+                              <div className="space-y-1">
+                                {(order.order_items || []).map((item: any, idx: number) => (
+                                  <div key={idx} className="flex items-center justify-between text-sm gap-2">
+                                    <span className="truncate flex-1">{item.products?.name || "منتج محذوف"}</span>
+                                    <Badge variant="outline" className="shrink-0">
+                                      {item.quantity}
+                                    </Badge>
+                                  </div>
+                                ))}
+                              </div>
                             </TableCell>
                             <TableCell className="font-bold text-blue-600">
                               {totalPrice.toFixed(2)} ج.م
