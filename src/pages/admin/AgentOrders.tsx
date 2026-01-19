@@ -111,7 +111,7 @@ const AgentOrders = () => {
         `)
         .eq("delivery_agent_id", selectedAgentId)
         .not("status", "in", '("delivered","returned","partially_returned","cancelled")')
-        .order("updated_at", { ascending: false });
+        .order("assigned_at", { ascending: false });
       
       if (error) throw error;
       return data;
@@ -187,7 +187,7 @@ const AgentOrders = () => {
           customers (name, phone, address, governorate)
         `)
         .eq("delivery_agent_id", selectedAgentId)
-        .order("created_at", { ascending: false });
+        .order("assigned_at", { ascending: false });
       
       if (error) throw error;
       return data;
@@ -240,8 +240,8 @@ const AgentOrders = () => {
       });
 
       ordersToUse = allAgentOrders.filter((o) => {
-        // استخدام updated_at كتاريخ التعيين إن وجد، وإلا created_at
-        const assignDate = getDateKey(o.updated_at || o.created_at);
+        // استخدم assigned_at كتاريخ تعيين ثابت (ولا يتغير مع أي تعديل لاحق)
+        const assignDate = getDateKey((o as any).assigned_at || o.updated_at || o.created_at);
         return assignDate === dateFilter;
       });
     }
@@ -1413,22 +1413,16 @@ const AgentOrders = () => {
                           </AlertDialog>
                          </TableCell>
                          <TableCell className="text-sm text-muted-foreground">
-                           {order.updated_at 
-                             ? new Date(order.updated_at).toLocaleDateString('ar-EG', { 
-                                 year: 'numeric', 
-                                 month: 'short', 
-                                 day: 'numeric',
-                                 hour: '2-digit',
-                                 minute: '2-digit'
-                               })
-                             : new Date(order.created_at).toLocaleDateString('ar-EG', { 
-                                 year: 'numeric', 
-                                 month: 'short', 
-                                 day: 'numeric',
-                                 hour: '2-digit',
-                                 minute: '2-digit'
-                               })
-                           }
+                           {(() => {
+                             const assignedAt = (order as any).assigned_at || order.updated_at || order.created_at;
+                             return new Date(assignedAt).toLocaleDateString('ar-EG', {
+                               year: 'numeric',
+                               month: 'short',
+                               day: 'numeric',
+                               hour: '2-digit',
+                               minute: '2-digit'
+                             });
+                           })()}
                          </TableCell>
                          <TableCell>
                            <div className="flex gap-2 flex-wrap">

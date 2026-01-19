@@ -501,6 +501,7 @@ export type Database = {
       orders: {
         Row: {
           agent_shipping_cost: number | null
+          assigned_at: string | null
           created_at: string | null
           customer_id: string | null
           delivery_agent_id: string | null
@@ -518,6 +519,7 @@ export type Database = {
         }
         Insert: {
           agent_shipping_cost?: number | null
+          assigned_at?: string | null
           created_at?: string | null
           customer_id?: string | null
           delivery_agent_id?: string | null
@@ -535,6 +537,7 @@ export type Database = {
         }
         Update: {
           agent_shipping_cost?: number | null
+          assigned_at?: string | null
           created_at?: string | null
           customer_id?: string | null
           delivery_agent_id?: string | null
