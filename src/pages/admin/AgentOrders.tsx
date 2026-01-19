@@ -739,12 +739,12 @@ const AgentOrders = () => {
 
   const handleOpenReturnDialog = (order: any) => {
     setSelectedOrderForReturn(order);
-    const items = order.order_items.map((item: any) => ({
+    const items = (order.order_items || []).map((item: any) => ({
       product_id: item.product_id,
-      product_name: item.products.name,
+      product_name: item.products?.name || item.product_details || "منتج غير معروف",
       total_quantity: item.quantity,
       returned_quantity: 0,
-      price: parseFloat(item.price.toString())
+      price: parseFloat(item.price?.toString() || "0")
     }));
     setReturnData({ returned_items: items, notes: "", removeShipping: false });
     setReturnDialogOpen(true);
@@ -1331,7 +1331,6 @@ const AgentOrders = () => {
                         <TableHead>الصافي</TableHead>
                         <TableHead>الحالة</TableHead>
                         <TableHead>تاريخ التعيين</TableHead>
-                        <TableHead>آخر تعديل</TableHead>
                         <TableHead>إجراءات</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -1362,9 +1361,6 @@ const AgentOrders = () => {
                               </Badge>
                             </TableCell>
                             <TableCell>{new Date(getOrderDate(order)).toLocaleDateString("ar-EG")}</TableCell>
-                            <TableCell>
-                              {order.updated_at ? new Date(order.updated_at).toLocaleDateString("ar-EG") : "-"}
-                            </TableCell>
 
                             <TableCell>
                               <div className="flex items-center gap-2 flex-wrap">
