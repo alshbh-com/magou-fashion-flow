@@ -26,11 +26,11 @@ const Statistics = () => {
       if (error) throw error;
       return data;
     },
-    refetchInterval: 30000, // ✅ تغيير: 30 ثانية بدل 1 ثانية
-    staleTime: 15000, // ✅ تغيير: 15 ثانية
+    refetchInterval: 1000,
+    staleTime: 0,
   });
 
-  // Get orders for selected month - based on created_at only
+  // Get orders for selected month
   const { data: monthlyOrders } = useQuery({
     queryKey: ["monthly-orders", selectedMonth],
     queryFn: async () => {
@@ -43,15 +43,14 @@ const Statistics = () => {
       const { data, error } = await supabase
         .from("orders")
         .select("*, delivery_agents(name), order_items(*, products(name, price))")
-        .gte("created_at", start.toISOString()) // ✅ استخدام created_at فقط
-        .lte("created_at", end.toISOString())   // ✅ استخدام created_at فقط
-        .order("created_at", { ascending: false }); // ✅ ترتيب حسب created_at
+        .gte("created_at", start.toISOString())
+        .lte("created_at", end.toISOString());
       
       if (error) throw error;
       return data;
     },
-    refetchInterval: 30000, // ✅ تغيير: 30 ثانية
-    staleTime: 15000,
+    refetchInterval: 1000,
+    staleTime: 0,
   });
 
   // Get orders for comparison month
@@ -68,16 +67,15 @@ const Statistics = () => {
       const { data, error } = await supabase
         .from("orders")
         .select("*, delivery_agents(name), order_items(*, products(name, price))")
-        .gte("created_at", start.toISOString()) // ✅ استخدام created_at فقط
-        .lte("created_at", end.toISOString())   // ✅ استخدام created_at فقط
-        .order("created_at", { ascending: false }); // ✅ ترتيب حسب created_at
+        .gte("created_at", start.toISOString())
+        .lte("created_at", end.toISOString());
       
       if (error) throw error;
       return data;
     },
     enabled: !!compareMonth,
-    refetchInterval: 30000, // ✅ تغيير: 30 ثانية
-    staleTime: 15000,
+    refetchInterval: 1000,
+    staleTime: 0,
   });
 
   // Get all orders for yearly data
@@ -91,15 +89,14 @@ const Statistics = () => {
       const { data, error } = await supabase
         .from("orders")
         .select("*, order_items(*, products(name))")
-        .gte("created_at", start.toISOString()) // ✅ استخدام created_at فقط
-        .lte("created_at", end.toISOString())   // ✅ استخدام created_at فقط
-        .order("created_at", { ascending: true }); // ✅ ترتيب حسب created_at
+        .gte("created_at", start.toISOString())
+        .lte("created_at", end.toISOString());
       
       if (error) throw error;
       return data;
     },
-    refetchInterval: 30000, // ✅ تغيير: 30 ثانية
-    staleTime: 15000,
+    refetchInterval: 1000,
+    staleTime: 0,
   });
 
   const { data: agents } = useQuery({
@@ -109,8 +106,8 @@ const Statistics = () => {
       if (error) throw error;
       return data;
     },
-    refetchInterval: 30000, // ✅ تغيير: 30 ثانية
-    staleTime: 15000,
+    refetchInterval: 1000,
+    staleTime: 0,
   });
 
   const { data: customers } = useQuery({
@@ -120,8 +117,8 @@ const Statistics = () => {
       if (error) throw error;
       return count || 0;
     },
-    refetchInterval: 30000, // ✅ تغيير: 30 ثانية
-    staleTime: 15000,
+    refetchInterval: 1000,
+    staleTime: 0,
   });
 
   const resetMutation = useMutation({
@@ -147,13 +144,7 @@ const Statistics = () => {
     return <div className="p-8">جاري التحميل...</div>;
   }
 
-  // ✅ دالة للحصول على تاريخ الأوردر الثابت
-  const getOrderDate = (order: any) => {
-    // استخدم assigned_at إن وجد، وإلا created_at
-    return order.assigned_at || order.created_at;
-  };
-
-  // Calculate monthly statistics based on created_at date
+  // Calculate monthly statistics
   const orders = monthlyOrders || [];
   const totalOrders = orders.length;
   const pendingOrders = orders.filter(o => o.status === 'pending').length;
@@ -162,12 +153,9 @@ const Statistics = () => {
   const cancelledOrders = orders.filter(o => o.status === 'cancelled').length;
   const returnedOrders = orders.filter(o => o.status === 'returned' || o.status === 'return_no_shipping').length;
   
-  // ✅ الحسابات تعتمد على تاريخ الأوردر الأصلي (created_at)
-  const totalSales = orders
-    .filter(o => o.status === 'delivered' || o.status === 'delivered_with_modification')
-    .reduce((sum, o) => 
-      sum + parseFloat(o.total_amount?.toString() || "0") + parseFloat(o.shipping_cost?.toString() || "0"), 0
-    );
+  const totalSales = orders.filter(o => o.status === 'delivered' || o.status === 'delivered_with_modification').reduce((sum, o) => 
+    sum + parseFloat(o.total_amount?.toString() || "0") + parseFloat(o.shipping_cost?.toString() || "0"), 0
+  );
 
   // Comparison stats
   const compareOrdersList = compareOrders || [];
@@ -205,15 +193,14 @@ const Statistics = () => {
     { name: 'مرتجع', value: returnedOrders, color: '#f97316' },
   ].filter(d => d.value > 0);
 
-  // Monthly data for line chart - based on created_at
+  // Monthly data for line chart
   const monthlyData: { month: string; orders: number; sales: number }[] = [];
   const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
   
   if (yearlyOrders) {
     for (let i = 0; i < 12; i++) {
       const monthOrders = yearlyOrders.filter(o => {
-        const orderDate = new Date(getOrderDate(o)); // ✅ استخدام تاريخ الأوردر الثابت
-        const orderMonth = orderDate.getMonth();
+        const orderMonth = new Date(o.created_at).getMonth();
         return orderMonth === i;
       });
       const monthSales = monthOrders
@@ -290,9 +277,6 @@ const Statistics = () => {
               </Select>
             </div>
           </div>
-          <p className="text-sm text-purple-300 mt-2">
-            ⓘ جميع الإحصائيات تعتمد على <strong>تاريخ إنشاء الأوردر الأصلي (created_at)</strong> ولا تتأثر بالتعديلات اللاحقة
-          </p>
         </div>
 
         {/* Main Stats Grid */}
@@ -307,7 +291,7 @@ const Statistics = () => {
                 <div className="text-3xl font-bold">{totalSales.toFixed(0)}</div>
                 <DollarSign className="h-8 w-8 opacity-50" />
               </div>
-              <p className="text-xs opacity-75 mt-1">ج.م (باعتماد تاريخ الأوردر)</p>
+              <p className="text-xs opacity-75 mt-1">ج.م</p>
               {compareMonth && (
                 <div className={`text-xs mt-2 flex items-center gap-1 ${Number(percentChange(totalSales, compareSales)) >= 0 ? 'text-green-200' : 'text-red-200'}`}>
                   <TrendingUp className="h-3 w-3" />
@@ -327,7 +311,7 @@ const Statistics = () => {
                 <div className="text-3xl font-bold">{totalOrders}</div>
                 <Package className="h-8 w-8 opacity-50" />
               </div>
-              <p className="text-xs opacity-75 mt-1">طلب (بتاريخ الإنشاء)</p>
+              <p className="text-xs opacity-75 mt-1">طلب</p>
               {compareMonth && (
                 <div className={`text-xs mt-2 flex items-center gap-1 ${Number(percentChange(totalOrders, compareTotalOrders)) >= 0 ? 'text-green-200' : 'text-red-200'}`}>
                   <TrendingUp className="h-3 w-3" />
@@ -447,9 +431,6 @@ const Statistics = () => {
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
-              <p className="text-xs text-purple-300 text-center mt-2">
-                * تعتمد على تاريخ إنشاء الأوردر (created_at)
-              </p>
             </CardContent>
           </Card>
         </div>
@@ -607,7 +588,7 @@ const Statistics = () => {
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-purple-200">
-              يتم حساب الإحصائيات تلقائياً من الأوردرات - <strong>تستند جميع الحسابات إلى تاريخ إنشاء الأوردر الأصلي (created_at)</strong>
+              يتم حساب الإحصائيات تلقائياً من الأوردرات
             </p>
             
             <div className="flex gap-4">

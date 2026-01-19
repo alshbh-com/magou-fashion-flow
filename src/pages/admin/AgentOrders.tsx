@@ -111,7 +111,7 @@ const AgentOrders = () => {
         `)
         .eq("delivery_agent_id", selectedAgentId)
         .not("status", "in", '("delivered","returned","partially_returned","cancelled")')
-        .order("created_at", { ascending: false }); // ✅ التغيير: created_at بدل updated_at
+        .order("updated_at", { ascending: false });
       
       if (error) throw error;
       return data;
@@ -187,7 +187,7 @@ const AgentOrders = () => {
           customers (name, phone, address, governorate)
         `)
         .eq("delivery_agent_id", selectedAgentId)
-        .order("created_at", { ascending: false }); // ✅ التغيير: created_at بدل updated_at
+        .order("created_at", { ascending: false });
       
       if (error) throw error;
       return data;
@@ -226,12 +226,6 @@ const AgentOrders = () => {
     },
   });
 
-  // ✅ دالة جديدة للحصول على تاريخ الأوردر الثابت
-  const getOrderDate = (order: any) => {
-    // استخدم assigned_at إن وجد، وإلا created_at (تاريخ إنشاء الأوردر الأصلي)
-    return order.assigned_at || order.created_at;
-  };
-
   // Calculate summary data
   const calculateSummary = (dateFilter?: string) => {
     if (!agentPaymentsData || !allAgentOrders) return null;
@@ -240,21 +234,15 @@ const AgentOrders = () => {
     let ordersToUse = allAgentOrders;
 
     if (dateFilter) {
-      // ✅ اليوميات تعتمد على تاريخ تعيين الأوردر (assigned_at) وليس تاريخ آخر تعديل
-      const orderDateById = new Map<string, string>();
-      allAgentOrders.forEach((o) => {
-        if (!o?.id) return;
-        orderDateById.set(o.id, getDateKey(getOrderDate(o)));
-      });
-
-      ordersToUse = allAgentOrders.filter((o) => orderDateById.get(o.id) === dateFilter);
-
-      // العمليات المرتبطة بأوردر (owed/delivered/return/modification) تُحسب على يوم تعيين الأوردر
-      // الدفعات غير المرتبطة بأوردر (payment بدون order_id) تظل على تاريخها
       paymentsToUse = agentPaymentsData.filter((p) => {
-        if (p.order_id) return orderDateById.get(p.order_id) === dateFilter;
         const paymentDate = getDateKey(p.created_at || "");
         return paymentDate === dateFilter;
+      });
+
+      ordersToUse = allAgentOrders.filter((o) => {
+        // استخدام updated_at كتاريخ التعيين إن وجد، وإلا created_at
+        const assignDate = getDateKey(o.updated_at || o.created_at);
+        return assignDate === dateFilter;
       });
     }
 
@@ -447,33 +435,6 @@ const AgentOrders = () => {
     }
   });
 
-  // ✅ دالة جديدة لتحديث الأوردر دون تغيير التاريخ
-  const updateOrderWithoutDateChange = async (orderId: string, updates: any) => {
-    // احتفظ بتاريخ created_at الأصلي
-    const { data: existingOrder } = await supabase
-      .from("orders")
-      .select("created_at, updated_at")
-      .eq("id", orderId)
-      .single();
-    
-    if (existingOrder) {
-      return await supabase
-        .from("orders")
-        .update({
-          ...updates,
-          // لا تغير created_at
-          created_at: existingOrder.created_at,
-          // updated_at يتغير تلقائياً لكن هذا مقبول
-        })
-        .eq("id", orderId);
-    }
-    
-    return await supabase
-      .from("orders")
-      .update(updates)
-      .eq("id", orderId);
-  };
-
   const handleAddPayment = () => {
     const amount = parseFloat(paymentAmount);
     if (isNaN(amount) || amount <= 0) {
@@ -506,10 +467,10 @@ const AgentOrders = () => {
     
     // Single date filter (priority)
     if (singleDateFilter) {
-      const orderDate = getDateKey(getOrderDate(order));
+      const orderDate = new Date(order.created_at).toISOString().split('T')[0];
       if (orderDate !== singleDateFilter) return false;
     } else if (startDate || endDate) {
-      const orderDate = getDateKey(getOrderDate(order));
+      const orderDate = new Date(order.created_at).toISOString().split('T')[0];
       if (startDate && orderDate < startDate) return false;
       if (endDate && orderDate > endDate) return false;
     }
@@ -549,8 +510,10 @@ const AgentOrders = () => {
         updates.delivery_agent_id = null;
       }
 
-      // ✅ استخدام الدالة الجديدة التي تحافظ على التواريخ
-      const { error } = await updateOrderWithoutDateChange(id, updates);
+      const { error } = await supabase
+        .from("orders")
+        .update(updates)
+        .eq("id", id);
       
       if (error) throw error;
 
@@ -568,7 +531,10 @@ const AgentOrders = () => {
   const updateShippingMutation = useMutation({
     mutationFn: async ({ orderId, newShipping, oldShipping, agentId }: { orderId: string; newShipping: number; oldShipping: number; agentId: string }) => {
       // Update order agent shipping cost (the cost the agent pays, which reduces what they owe)
-      const { error: orderError } = await updateOrderWithoutDateChange(orderId, { agent_shipping_cost: newShipping });
+      const { error: orderError } = await supabase
+        .from("orders")
+        .update({ agent_shipping_cost: newShipping })
+        .eq("id", orderId);
       
       if (orderError) throw orderError;
 
@@ -695,11 +661,13 @@ const AgentOrders = () => {
 
   const unassignAgentMutation = useMutation({
     mutationFn: async (orderId: string) => {
-      // ✅ استخدام الدالة الجديدة التي تحافظ على التواريخ
-      const { error } = await updateOrderWithoutDateChange(orderId, { 
-        delivery_agent_id: null,
-        status: 'pending'
-      });
+      const { error } = await supabase
+        .from("orders")
+        .update({ 
+          delivery_agent_id: null,
+          status: 'pending'
+        })
+        .eq("id", orderId);
       
       if (error) throw error;
     },
@@ -739,12 +707,12 @@ const AgentOrders = () => {
 
   const handleOpenReturnDialog = (order: any) => {
     setSelectedOrderForReturn(order);
-    const items = (order.order_items || []).map((item: any) => ({
+    const items = order.order_items.map((item: any) => ({
       product_id: item.product_id,
-      product_name: item.products?.name || item.product_details || "منتج غير معروف",
+      product_name: item.products.name,
       total_quantity: item.quantity,
       returned_quantity: 0,
-      price: parseFloat(item.price?.toString() || "0")
+      price: parseFloat(item.price.toString())
     }));
     setReturnData({ returned_items: items, notes: "", removeShipping: false });
     setReturnDialogOpen(true);
@@ -791,8 +759,7 @@ const AgentOrders = () => {
         "شحن المندوب": agentShipping.toFixed(2),
         "الصافي": netAmount.toFixed(2),
         "الحالة": statusLabels[order.status] || order.status,
-        "تاريخ الأوردر": new Date(getOrderDate(order)).toLocaleDateString("ar-EG"), // ✅ استخدام التاريخ الثابت
-        "تاريخ آخر تعديل": order.updated_at ? new Date(order.updated_at).toLocaleDateString("ar-EG") : "-"
+        "التاريخ": new Date(order.created_at).toLocaleDateString("ar-EG")
       };
     });
 
@@ -809,8 +776,7 @@ const AgentOrders = () => {
       { wch: 12 }, // شحن المندوب
       { wch: 12 }, // الصافي
       { wch: 12 }, // الحالة
-      { wch: 15 }, // تاريخ الأوردر ✅
-      { wch: 15 }  // تاريخ آخر تعديل ✅
+      { wch: 12 }  // التاريخ
     ];
     ws['!cols'] = colWidths;
 
@@ -857,8 +823,7 @@ const AgentOrders = () => {
           <hr style="border: 1px solid #ddd; margin: 20px 0;"/>
           <div style="margin: 20px 0; line-height: 1.8;">
             <p><strong>رقم الأوردر:</strong> #${order.order_number || order.id.slice(0, 8)}</p>
-            <p><strong>تاريخ الأوردر:</strong> ${new Date(getOrderDate(order)).toLocaleDateString('ar-EG')}</p> <!-- ✅ استخدام التاريخ الثابت -->
-            <p><strong>تاريخ آخر تعديل:</strong> ${order.updated_at ? new Date(order.updated_at).toLocaleDateString('ar-EG') : '-'}</p>
+            <p><strong>التاريخ:</strong> ${new Date(order.created_at).toLocaleDateString('ar-EG')}</p>
             <p><strong>اسم العميل:</strong> ${order.customers?.name}</p>
             <p><strong>الهاتف:</strong> ${order.customers?.phone}</p>
             <p><strong>الهاتف 2:</strong> ${(order.customers as any)?.phone2 || '-'}</p>
@@ -1033,8 +998,7 @@ const AgentOrders = () => {
           <hr/>
           <div class="info">
             <p><strong>رقم الأوردر:</strong> #${order.order_number || order.id.slice(0, 8)}</p>
-            <p><strong>تاريخ الأوردر:</strong> ${new Date(getOrderDate(order)).toLocaleDateString('ar-EG')}</p> <!-- ✅ استخدام التاريخ الثابت -->
-            <p><strong>تاريخ آخر تعديل:</strong> ${order.updated_at ? new Date(order.updated_at).toLocaleDateString('ar-EG') : '-'}</p>
+            <p><strong>التاريخ:</strong> ${new Date(order.created_at).toLocaleDateString('ar-EG')}</p>
             <p><strong>اسم العميل:</strong> ${order.customers?.name}</p>
             <p><strong>الهاتف:</strong> ${order.customers?.phone}</p>
             <p><strong>الهاتف 2:</strong> ${(order.customers as any)?.phone2 || '-'}</p>
@@ -1119,8 +1083,7 @@ const AgentOrders = () => {
           <hr/>
           <div class="info">
             <p><strong>المندوب:</strong> ${agent?.name || 'غير محدد'} (${agent?.serial_number || '-'})</p>
-            <p><strong>تاريخ الأوردرات:</strong> ${new Date(summaryDateFilter).toLocaleDateString('ar-EG')}</p>
-            <p><strong>ملاحظة:</strong> الحسابات تعتمد على تاريخ تعيين الأوردر (assigned_at) وليس تاريخ آخر تعديل</p>
+            <p><strong>التاريخ:</strong> ${new Date(summaryDateFilter).toLocaleDateString('ar-EG')}</p>
             <p><strong>تاريخ الطباعة:</strong> ${new Date().toLocaleString('ar-EG')}</p>
           </div>
           <hr/>
@@ -1148,7 +1111,7 @@ const AgentOrders = () => {
           </div>
           <hr/>
           <p style="text-align: center; font-size: 12px; color: #999;">
-            تم إنشاء هذا التقرير تلقائياً - نظام الإحصائيات يعتمد على تاريخ تعيين الأوردر (assigned_at)
+            تم إنشاء هذا التقرير تلقائياً
           </p>
         </body>
       </html>
@@ -1176,7 +1139,6 @@ const AgentOrders = () => {
                 </Button>
               )}
             </div>
-
             <div className="mt-4 space-y-4">
               <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
                 <SelectTrigger className="w-64">
@@ -1204,7 +1166,6 @@ const AgentOrders = () => {
                         className="w-64"
                       />
                     </div>
-
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">فلتر حسب الحالة:</span>
                       <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -1221,9 +1182,8 @@ const AgentOrders = () => {
                         </SelectContent>
                       </Select>
                     </div>
-
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">تاريخ التعيين:</span>
+                      <span className="text-sm font-medium">تاريخ محدد:</span>
                       <Input
                         type="date"
                         value={singleDateFilter}
@@ -1242,9 +1202,8 @@ const AgentOrders = () => {
                         </Button>
                       )}
                     </div>
-
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">من تاريخ التعيين:</span>
+                      <span className="text-sm font-medium">من تاريخ:</span>
                       <Input
                         type="date"
                         value={startDate}
@@ -1255,9 +1214,8 @@ const AgentOrders = () => {
                         className="w-40"
                       />
                     </div>
-
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">إلى تاريخ التعيين:</span>
+                      <span className="text-sm font-medium">إلى تاريخ:</span>
                       <Input
                         type="date"
                         value={endDate}
@@ -1268,24 +1226,20 @@ const AgentOrders = () => {
                         className="w-40"
                       />
                     </div>
-
                     {(startDate || endDate) && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setStartDate("");
-                          setEndDate("");
-                        }}
-                      >
+                      <Button size="sm" variant="ghost" onClick={() => {
+                        setStartDate("");
+                        setEndDate("");
+                      }}>
                         إلغاء
                       </Button>
                     )}
                   </div>
-
-                  {selectedOrders.length > 0 && (
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm text-muted-foreground">{selectedOrders.length} محدد</span>
+                   {selectedOrders.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">
+                        {selectedOrders.length} محدد
+                      </span>
                       <Button onClick={handleExportExcel} size="sm" variant="outline">
                         <Download className="ml-2 h-4 w-4" />
                         تصدير Excel
@@ -1294,9 +1248,12 @@ const AgentOrders = () => {
                         <Printer className="ml-2 h-4 w-4" />
                         طباعة
                       </Button>
-                      <Button onClick={() => setBulkStatusDialogOpen(true)} size="sm">
-                        <ChevronDown className="ml-2 h-4 w-4" />
-                        تغيير حالة (مجمع)
+                      <Button 
+                        onClick={() => setBulkStatusDialogOpen(true)} 
+                        size="sm" 
+                        variant="default"
+                      >
+                        تغيير الحالة للمحدد
                       </Button>
                     </div>
                   )}
@@ -1304,30 +1261,30 @@ const AgentOrders = () => {
               )}
             </div>
           </CardHeader>
-
           <CardContent>
             {!selectedAgentId ? (
-              <p className="text-center text-muted-foreground py-10">اختر مندوب لعرض الأوردرات والملخص.</p>
+              <p className="text-center text-muted-foreground py-8">اختر مندوب لعرض أوردراته</p>
             ) : isLoading ? (
-              <p className="text-center text-muted-foreground py-10">جاري التحميل...</p>
+              <p className="text-center py-8">جاري التحميل...</p>
             ) : !filteredOrders || filteredOrders.length === 0 ? (
-              <p className="text-center text-muted-foreground py-10">لا توجد أوردرات لهذا المندوب.</p>
+              <p className="text-center text-muted-foreground py-8">لا توجد أوردرات لهذا المندوب</p>
             ) : (
-              <div className="space-y-6">
-                <div className="overflow-x-auto">
+              <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-12">
+                        <TableHead>
                           <Checkbox
-                            checked={selectedOrders.length === filteredOrders.length}
+                            checked={selectedOrders.length === filteredOrders?.length}
                             onCheckedChange={toggleSelectAll}
                           />
                         </TableHead>
-                        <TableHead>رقم</TableHead>
+                        <TableHead>رقم الأوردر</TableHead>
                         <TableHead>العميل</TableHead>
                         <TableHead>الهاتف</TableHead>
-                        <TableHead>المحافظة</TableHead>
+                        <TableHead>العنوان</TableHead>
+                        <TableHead>الإجمالي</TableHead>
+                        <TableHead>شحن المندوب</TableHead>
                         <TableHead>الصافي</TableHead>
                         <TableHead>الحالة</TableHead>
                         <TableHead>تاريخ التعيين</TableHead>
@@ -1338,9 +1295,10 @@ const AgentOrders = () => {
                       {filteredOrders.map((order) => {
                         const customerShipping = parseFloat(order.shipping_cost?.toString() || "0");
                         const agentShipping = parseFloat(order.agent_shipping_cost?.toString() || "0");
-                        const totalAmount = parseFloat(order.total_amount?.toString() || "0");
-                        const netAmount = totalAmount + customerShipping - agentShipping;
-
+                        const totalAmount = parseFloat(order.total_amount.toString());
+                        const totalPrice = totalAmount + customerShipping; // الإجمالي (ثابت)
+                        const netAmount = totalPrice - agentShipping; // الصافي (المستحقات)
+                        
                         return (
                           <TableRow key={order.id}>
                             <TableCell>
@@ -1349,382 +1307,623 @@ const AgentOrders = () => {
                                 onCheckedChange={() => toggleOrderSelection(order.id)}
                               />
                             </TableCell>
-
-                            <TableCell className="font-mono text-xs">#{order.order_number || order.id.slice(0, 8)}</TableCell>
-                            <TableCell className="font-medium">{order.customers?.name || "-"}</TableCell>
-                            <TableCell>{order.customers?.phone || "-"}</TableCell>
-                            <TableCell>{order.customers?.governorate || "-"}</TableCell>
-                            <TableCell className="font-bold">{netAmount.toFixed(2)} ج.م</TableCell>
-                            <TableCell>
-                              <Badge className={statusColors[order.status] || "bg-gray-500"}>
-                                {statusLabels[order.status] || order.status}
-                              </Badge>
+                            <TableCell className="font-mono text-xs">
+                              #{order.order_number || order.id.slice(0, 8)}
                             </TableCell>
-                            <TableCell>{new Date(getOrderDate(order)).toLocaleDateString("ar-EG")}</TableCell>
-
+                            <TableCell className="font-medium">
+                              {order.customers?.name}
+                            </TableCell>
+                            <TableCell>{order.customers?.phone}</TableCell>
+                            <TableCell className="max-w-xs whitespace-normal break-words">
+                              {order.customers?.address}
+                            </TableCell>
+                            <TableCell className="font-bold text-blue-600">
+                              {totalPrice.toFixed(2)} ج.م
+                            </TableCell>
                             <TableCell>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <Button size="sm" variant="outline" onClick={() => handlePrintOrder(order)}>
-                                  <Printer className="ml-2 h-4 w-4" />
-                                  طباعة
-                                </Button>
-
-                                <Button size="sm" variant="outline" onClick={() => handleOpenReturnDialog(order)}>
-                                  <PackageX className="ml-2 h-4 w-4" />
-                                  مرتجع
-                                </Button>
-
-                                <Button size="sm" variant="outline" onClick={() => unassignAgentMutation.mutate(order.id)}>
-                                  <ArrowDown className="ml-2 h-4 w-4" />
-                                  إلغاء التعيين
-                                </Button>
-
-                                <AlertDialog>
-                                  <AlertDialogTrigger asChild>
-                                    <Button size="sm" variant="destructive">
-                                      <Trash2 className="ml-2 h-4 w-4" />
-                                      حذف
-                                    </Button>
-                                  </AlertDialogTrigger>
-                                  <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                      <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
-                                      <AlertDialogDescription>
-                                        هل أنت متأكد من حذف هذا الأوردر؟ سيتم حذف بياناته ودفعاته المرتبطة.
-                                      </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                      <AlertDialogCancel>إلغاء</AlertDialogCancel>
-                                      <AlertDialogAction onClick={() => deleteOrderMutation.mutate(order.id)}>
-                                        حذف
-                                      </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                  </AlertDialogContent>
-                                </AlertDialog>
-
-                                {/* تعديل شحن المندوب */}
-                                {editingShipping === order.id ? (
-                                  <div className="flex items-center gap-2">
-                                    <Input
-                                      type="number"
-                                      value={newShipping}
-                                      onChange={(e) => setNewShipping(e.target.value)}
-                                      className="w-24"
-                                      min="0"
-                                    />
-                                    <Button
-                                      size="sm"
-                                      onClick={() => {
-                                        const value = parseFloat(newShipping);
-                                        if (isNaN(value) || value < 0) return toast.error("قيمة غير صحيحة");
-                                        updateShippingMutation.mutate({
-                                          orderId: order.id,
-                                          newShipping: value,
-                                          oldShipping: parseFloat(order.agent_shipping_cost?.toString() || "0"),
-                                          agentId: order.delivery_agent_id,
-                                        });
-                                        setEditingShipping(null);
-                                        setNewShipping("");
-                                      }}
-                                    >
-                                      حفظ
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      onClick={() => {
-                                        setEditingShipping(null);
-                                        setNewShipping("");
-                                      }}
-                                    >
-                                      إلغاء
-                                    </Button>
-                                  </div>
-                                ) : (
+                              {editingShipping === order.id ? (
+                                <div className="flex items-center gap-2">
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    value={newShipping}
+                                    onChange={(e) => setNewShipping(e.target.value)}
+                                    className="w-20"
+                                  />
                                   <Button
                                     size="sm"
-                                    variant="outline"
                                     onClick={() => {
-                                      setEditingShipping(order.id);
-                                      setNewShipping(order.agent_shipping_cost?.toString() || "0");
+                                      updateShippingMutation.mutate({
+                                        orderId: order.id,
+                                        newShipping: parseFloat(newShipping),
+                                        oldShipping: agentShipping,
+                                        agentId: order.delivery_agent_id!
+                                      });
+                                      setEditingShipping(null);
                                     }}
                                   >
-                                    <Edit2 className="ml-2 h-4 w-4" />
-                                    شحن المندوب
+                                    حفظ
                                   </Button>
-                                )}
-                              </div>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => setEditingShipping(null)}
+                                  >
+                                    ✕
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div
+                                  className="text-orange-600 font-semibold cursor-pointer hover:bg-accent p-2 rounded"
+                                  onClick={() => {
+                                    setEditingShipping(order.id);
+                                    setNewShipping(agentShipping.toString());
+                                  }}
+                                >
+                                  {agentShipping.toFixed(2)} ج.م
+                                </div>
+                              )}
                             </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
+                            <TableCell className="font-bold text-green-600">
+                              {netAmount.toFixed(2)} ج.م
+                            </TableCell>
+                        <TableCell>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                              >
+                                تعديل الحالة
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>تعديل حالة الأوردر</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  اختر الحالة الجديدة للأوردر #{order.order_number || order.id.slice(0, 8)}
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <div className="py-4">
+                                <Select
+                                  defaultValue={order.status}
+                                  onValueChange={(value) => {
+                                    updateStatusMutation.mutate({ id: order.id, status: value });
+                                  }}
+                                >
+                                  <SelectTrigger className="w-full">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {Object.entries(statusLabels).map(([value, label]) => (
+                                      <SelectItem key={value} value={value}>
+                                        <div className="flex items-center gap-2">
+                                          <div className={`w-2 h-2 rounded-full ${statusColors[value]}`} />
+                                          {label}
+                                        </div>
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                         </TableCell>
+                         <TableCell className="text-sm text-muted-foreground">
+                           {order.updated_at 
+                             ? new Date(order.updated_at).toLocaleDateString('ar-EG', { 
+                                 year: 'numeric', 
+                                 month: 'short', 
+                                 day: 'numeric',
+                                 hour: '2-digit',
+                                 minute: '2-digit'
+                               })
+                             : new Date(order.created_at).toLocaleDateString('ar-EG', { 
+                                 year: 'numeric', 
+                                 month: 'short', 
+                                 day: 'numeric',
+                                 hour: '2-digit',
+                                 minute: '2-digit'
+                               })
+                           }
+                         </TableCell>
+                         <TableCell>
+                           <div className="flex gap-2 flex-wrap">
+                             <Button
+                               variant="ghost"
+                               size="icon"
+                               onClick={() => {
+                                 const phone = order.customers?.phone || "";
+                                 const formattedPhone = phone.startsWith("0") ? `+2${phone.substring(1)}` : phone;
+                                 const message = `مرحباً ${order.customers?.name}، تم شحن طلبك رقم #${order.order_number}. سيصلك قريباً مع مندوب التوصيل.`;
+                                 window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`, '_blank');
+                               }}
+                               title="تأكيد عبر واتساب"
+                               className="bg-green-500 hover:bg-green-600 text-white"
+                             >
+                               <MessageCircle className="h-4 w-4" />
+                             </Button>
+                             <Button
+                               variant="ghost"
+                               size="icon"
+                               onClick={() => handlePrintOrder(order)}
+                               title="طباعة الفاتورة"
+                             >
+                               <Printer className="h-4 w-4" />
+                             </Button>
+                             <Button
+                               variant="ghost"
+                               size="icon"
+                               onClick={() => {
+                                 const phone = order.customers?.phone || "";
+                                 const formattedPhone = phone.startsWith("0") ? `+2${phone.substring(1)}` : phone;
+                                 const message = `مرحباً ${order.customers?.name}، تم شحن طلبك رقم #${order.order_number}. سيصلك قريباً مع مندوب التوصيل.`;
+                                 window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`, '_blank');
+                               }}
+                               title="تأكيد عبر واتساب"
+                               className="bg-green-500 hover:bg-green-600 text-white"
+                             >
+                               <MessageCircle className="h-4 w-4" />
+                             </Button>
+                             <Button
+                               variant="ghost"
+                               size="icon"
+                               onClick={() => handlePrintOrder(order)}
+                               title="طباعة الفاتورة"
+                             >
+                               <Printer className="h-4 w-4" />
+                             </Button>
+                             <AlertDialog>
+                               <AlertDialogTrigger asChild>
+                                 <Button
+                                   variant="outline"
+                                   size="sm"
+                                 >
+                                   <PackageX className="ml-2 h-4 w-4" />
+                                   مرتجع
+                                 </Button>
+                               </AlertDialogTrigger>
+                               <AlertDialogContent>
+                                 <AlertDialogHeader>
+                                   <AlertDialogTitle>تأكيد المرتجع</AlertDialogTitle>
+                                   <AlertDialogDescription>
+                                     هل أنت متأكد من تسجيل هذا الأوردر كمرتجع؟
+                                   </AlertDialogDescription>
+                                 </AlertDialogHeader>
+                                 <AlertDialogFooter>
+                                   <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                                   <AlertDialogAction onClick={() => {
+                                     setPendingReturnOrder(order);
+                                     setConfirmReturnDialogOpen(true);
+                                   }}>
+                                     تأكيد
+                                   </AlertDialogAction>
+                                 </AlertDialogFooter>
+                               </AlertDialogContent>
+                             </AlertDialog>
+                             <AlertDialog>
+                               <AlertDialogTrigger asChild>
+                                 <Button
+                                   variant="destructive"
+                                   size="sm"
+                                 >
+                                   <Trash2 className="h-4 w-4" />
+                                 </Button>
+                               </AlertDialogTrigger>
+                               <AlertDialogContent>
+                                 <AlertDialogHeader>
+                                   <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
+                                   <AlertDialogDescription>
+                                     هل أنت متأكد من حذف الأوردر؟ سيتم حذف جميع البيانات المرتبطة به.
+                                   </AlertDialogDescription>
+                                 </AlertDialogHeader>
+                                 <AlertDialogFooter>
+                                   <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                                   <AlertDialogAction onClick={() => deleteOrderMutation.mutate(order.id)}>
+                                     حذف
+                                   </AlertDialogAction>
+                                 </AlertDialogFooter>
+                               </AlertDialogContent>
+                             </AlertDialog>
+                             <AlertDialog>
+                               <AlertDialogTrigger asChild>
+                                 <Button
+                                   variant="outline"
+                                   size="sm"
+                                 >
+                                   إلغاء التعيين
+                                 </Button>
+                               </AlertDialogTrigger>
+                               <AlertDialogContent>
+                                 <AlertDialogHeader>
+                                   <AlertDialogTitle>تأكيد إلغاء التعيين</AlertDialogTitle>
+                                   <AlertDialogDescription>
+                                     هل أنت متأكد من إلغاء تعيين المندوب؟ سيتم إرجاع الأوردر إلى قائمة الأوردرات.
+                                   </AlertDialogDescription>
+                                 </AlertDialogHeader>
+                                 <AlertDialogFooter>
+                                   <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                                   <AlertDialogAction onClick={() => unassignAgentMutation.mutate(order.id)}>
+                                     إلغاء التعيين
+                                   </AlertDialogAction>
+                                 </AlertDialogFooter>
+                               </AlertDialogContent>
+                             </AlertDialog>
+                           </div>
+                         </TableCell>
+                      </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+                
+                {/* Orders Summary - visible only when there are orders in the filter */}
+                <div className="mt-6 p-4 bg-accent rounded-lg space-y-2">
+                  <h3 className="font-bold mb-2">ملخص الأوردرات المعروضة</h3>
+                  <p>عدد الأوردرات: {filteredOrders.length}</p>
+                  <p className="font-bold text-lg text-purple-600">
+                    إجمالي الأوردرات: {filteredOrders.reduce((sum, order) => {
+                      const total = parseFloat(order.total_amount.toString());
+                      const customerShipping = parseFloat(order.shipping_cost?.toString() || "0");
+                      return sum + (total + customerShipping);
+                    }, 0).toFixed(2)} ج.م
+                  </p>
+                  <p className="font-bold text-lg text-orange-600">
+                    شحن المندوب (خصم): {filteredOrders.reduce((sum, order) => sum + parseFloat(order.agent_shipping_cost?.toString() || "0"), 0).toFixed(2)} ج.م
+                  </p>
+                  <p className="font-bold text-xl text-green-600">
+                    الصافي المطلوب من المندوب (من الأوردرات المعروضة): {filteredOrders.reduce((sum, order) => {
+                      const total = parseFloat(order.total_amount.toString());
+                      const customerShipping = parseFloat(order.shipping_cost?.toString() || "0");
+                      const agentShipping = parseFloat(order.agent_shipping_cost?.toString() || "0");
+                      return sum + (total + customerShipping - agentShipping);
+                    }, 0).toFixed(2)} ج.م
+                  </p>
                 </div>
-
-                {/* الملخص */}
-                <div ref={summaryRef} />
-                <Card>
-                  <CardHeader>
-                    <div className="flex items-center justify-between flex-wrap gap-4">
-                      <CardTitle>ملخص اليوميات (حسب تاريخ التعيين)</CardTitle>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Select value={summaryDateFilter} onValueChange={setSummaryDateFilter}>
-                          <SelectTrigger className="w-44">
-                            <SelectValue placeholder="اختر يوم" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {uniqueDates.map((d) => (
-                              <SelectItem key={d} value={d}>
-                                {d}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Button variant="outline" size="sm" onClick={handlePrintSummary}>
-                          <Printer className="ml-2 h-4 w-4" />
-                          طباعة الملخص
-                        </Button>
-                        <Button variant="default" size="sm" onClick={() => setPaymentDialogOpen(true)}>
-                          <Plus className="ml-2 h-4 w-4" />
-                          إضافة دفعة
-                        </Button>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    {!summaryData ? (
-                      <p className="text-muted-foreground">لا توجد بيانات للملخص.</p>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <div className="rounded-lg border p-4">
-                          <div className="text-sm text-muted-foreground">صافي المطلوب (اليوم)</div>
-                          <div className="text-2xl font-bold mt-1">{summaryData.netRequired.toFixed(2)} ج.م</div>
-                        </div>
-
-                        <div className="rounded-lg border p-4">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="text-sm text-muted-foreground">الأوردرات المسلمة</div>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => {
-                                setEditingField("delivered");
-                                setEditingValue((summaryData.totalDelivered || 0).toString());
-                              }}
-                            >
-                              <Edit2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                          <div className="text-2xl font-bold mt-1">{summaryData.totalDelivered.toFixed(2)} ج.م</div>
-                        </div>
-
-                        <div className="rounded-lg border p-4">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="text-sm text-muted-foreground">الدفعة المقدمة</div>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => {
-                                setEditingField("payment");
-                                setEditingValue((summaryData.totalPaid || 0).toString());
-                              }}
-                            >
-                              <Edit2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                          <div className="text-2xl font-bold mt-1">{summaryData.totalPaid.toFixed(2)} ج.م</div>
-                        </div>
-
-                        <div className="rounded-lg border p-4">
-                          <div className="text-sm text-muted-foreground">الصافي المطلوب من المندوب</div>
-                          <div className="text-2xl font-bold mt-1">{summaryData.agentReceivables.toFixed(2)} ج.م</div>
-                        </div>
-
-                        <div className="rounded-lg border p-4">
-                          <div className="text-sm text-muted-foreground">المرتجعات</div>
-                          <div className="text-lg font-semibold mt-1">{summaryData.returnedCount} أوردر</div>
-                          <div className="text-sm text-muted-foreground mt-1">بقيمة {summaryData.returnedTotal.toFixed(2)} ج.م</div>
-                        </div>
-
-                        <div className="rounded-lg border p-4">
-                          <div className="text-sm text-muted-foreground">في الطريق</div>
-                          <div className="text-lg font-semibold mt-1">{summaryData.shippedCount} أوردر</div>
-                          <div className="text-sm text-muted-foreground mt-1">بقيمة {summaryData.shippedTotal.toFixed(2)} ج.م</div>
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Dialog: تغيير حالة مجمع */}
-        <Dialog open={bulkStatusDialogOpen} onOpenChange={setBulkStatusDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>تغيير حالة الأوردرات المحددة</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>الحالة الجديدة</Label>
-                <Select value={bulkStatus} onValueChange={setBulkStatus}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="اختر حالة" />
+        {/* Agent Summary Card - Always visible when agent is selected */}
+        {selectedAgentId && (
+          <Card ref={summaryRef} className="mt-6">
+            <CardHeader>
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <CardTitle>ملخص مستحقات المندوب</CardTitle>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    onClick={() => handlePrintSummary()}
+                  >
+                    <Printer className="ml-2 h-4 w-4" />
+                    طباعة الملخص
+                  </Button>
+                  <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+                    <DialogTrigger asChild>
+                      <Button size="sm">
+                        <Plus className="ml-2 h-4 w-4" />
+                        إضافة دفعة
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>إضافة دفعة مقدمة</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4 py-4">
+                        <div>
+                          <Label>المبلغ (ج.م)</Label>
+                          <Input
+                            type="number"
+                            value={paymentAmount}
+                            onChange={(e) => setPaymentAmount(e.target.value)}
+                            placeholder="أدخل المبلغ"
+                          />
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          سيتم خصم هذا المبلغ من مستحقات المندوب
+                        </p>
+                      </div>
+                      <div className="flex justify-end gap-2">
+                        <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>
+                          إلغاء
+                        </Button>
+                        <Button onClick={handleAddPayment}>
+                          إضافة الدفعة
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </div>
+              <div className="mt-4">
+                <Label>اختر التاريخ:</Label>
+                <Select value={summaryDateFilter} onValueChange={setSummaryDateFilter}>
+                  <SelectTrigger className="w-48 mt-1">
+                    <SelectValue placeholder="اليوم" />
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(statusLabels).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
+                    {uniqueDates.map((date) => (
+                      <SelectItem key={date} value={date}>
+                        {new Date(date).toLocaleDateString('ar-EG')}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="ghost" onClick={() => setBulkStatusDialogOpen(false)}>
-                  إلغاء
-                </Button>
-                <Button onClick={handleBulkStatusUpdate}>تطبيق</Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+            </CardHeader>
+            <CardContent>
+              {summaryData ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {/* الصافي المطلوب من المندوب (يومي) */}
+                  <div className="p-4 bg-red-50 dark:bg-red-950/20 rounded-lg border border-red-200 dark:border-red-800">
+                    <p className="text-sm text-muted-foreground mb-1">الصافي المطلوب من المندوب (اليوم)</p>
+                    <p className={`text-2xl font-bold ${summaryData.agentReceivables >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      {summaryData.agentReceivables.toFixed(2)} ج.م
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      = صافي المطلوب ({summaryData.netRequired.toFixed(2)}) - المسلم ({summaryData.totalDelivered.toFixed(2)}) - الدفعات ({summaryData.totalPaid.toFixed(2)})
+                    </p>
+                  </div>
 
-        {/* Dialog: إضافة دفعة */}
-        <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+                  {/* الأوردرات المسلمة */}
+                  <div className="p-4 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-sm text-muted-foreground">الأوردرات المسلمة</p>
+                      {summaryDateFilter === today && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => {
+                            setEditingField('delivered');
+                            setEditingValue(summaryData.totalDelivered.toFixed(2));
+                          }}
+                        >
+                          <Edit2 className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
+                    {editingField === 'delivered' ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          className="h-8"
+                        />
+                        <Button size="sm" onClick={handleEditSummary}>حفظ</Button>
+                        <Button size="sm" variant="outline" onClick={() => setEditingField(null)}>إلغاء</Button>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-2xl font-bold text-green-600">
+                          {summaryData.totalDelivered.toFixed(2)} ج.م
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          عدد: {summaryData.deliveredCount} أوردر
+                        </p>
+                      </>
+                    )}
+                  </div>
+
+                  {/* الدفعة المقدمة */}
+                  <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-sm text-muted-foreground">الدفعة المقدمة</p>
+                      {summaryDateFilter === today && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => {
+                            setEditingField('payment');
+                            setEditingValue(summaryData.totalPaid.toFixed(2));
+                          }}
+                        >
+                          <Edit2 className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
+                    {editingField === 'payment' ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          className="h-8"
+                        />
+                        <Button size="sm" onClick={handleEditSummary}>حفظ</Button>
+                        <Button size="sm" variant="outline" onClick={() => setEditingField(null)}>إلغاء</Button>
+                      </div>
+                    ) : (
+                      <p className="text-2xl font-bold text-blue-600">
+                        {summaryData.totalPaid.toFixed(2)} ج.م
+                      </p>
+                    )}
+                  </div>
+
+
+                  {/* المرتجعات */}
+                  <div className="p-4 bg-orange-50 dark:bg-orange-950/20 rounded-lg border border-orange-200 dark:border-orange-800">
+                    <p className="text-sm text-muted-foreground mb-1">المرتجعات</p>
+                    <p className="text-2xl font-bold text-orange-600">
+                      {summaryData.returnedCount} أوردر
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      بقيمة: {summaryData.returnedTotal.toFixed(2)} ج.م
+                    </p>
+                  </div>
+
+                  {/* أوردرات في الطريق */}
+                  <div className="p-4 bg-yellow-50 dark:bg-yellow-950/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                    <p className="text-sm text-muted-foreground mb-1">أوردرات في الطريق</p>
+                    <p className="text-2xl font-bold text-yellow-600">
+                      {summaryData.shippedCount} أوردر
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      بقيمة: {summaryData.shippedTotal.toFixed(2)} ج.م
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-center text-muted-foreground py-4">لا توجد بيانات</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Confirm Return Dialog */}
+        <AlertDialog open={confirmReturnDialogOpen} onOpenChange={setConfirmReturnDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-yellow-500" />
+                تأكيد المرتجع
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                هل تريد إرسال هذا الأوردر إلى السلة لتعديله؟ سيتم نقله إلى صفحة السلة حيث يمكنك تقليل أو زيادة الكميات ثم تأكيد الأوردر بنفس الرقم والتاريخ.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>إلغاء</AlertDialogCancel>
+              <AlertDialogAction onClick={() => {
+                if (pendingReturnOrder) {
+                  // Navigate to cart with order data
+                  navigate('/cart', { 
+                    state: { 
+                      returnOrder: pendingReturnOrder,
+                      isReturn: true 
+                    } 
+                  });
+                }
+                setConfirmReturnDialogOpen(false);
+                setPendingReturnOrder(null);
+              }}>
+                تأكيد ونقل للسلة
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Bulk Status Update Dialog */}
+        <Dialog open={bulkStatusDialogOpen} onOpenChange={setBulkStatusDialogOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>إضافة دفعة مقدمة</DialogTitle>
+              <DialogTitle>تحديث حالة الأوردرات المحددة</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>المبلغ</Label>
-                <Input
-                  type="number"
-                  value={paymentAmount}
-                  onChange={(e) => setPaymentAmount(e.target.value)}
-                  placeholder="مثال: 500"
-                  min="0"
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="ghost" onClick={() => setPaymentDialogOpen(false)}>
-                  إلغاء
-                </Button>
-                <Button onClick={handleAddPayment}>إضافة</Button>
-              </div>
+            <div className="space-y-4 py-4">
+              <p className="text-sm text-muted-foreground">
+                تم تحديد {selectedOrders.length} أوردر. اختر الحالة الجديدة:
+              </p>
+              <Select value={bulkStatus} onValueChange={setBulkStatus}>
+                <SelectTrigger>
+                  <SelectValue placeholder="اختر الحالة" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(statusLabels).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setBulkStatusDialogOpen(false)}>
+                إلغاء
+              </Button>
+              <Button onClick={handleBulkStatusUpdate} disabled={!bulkStatus}>
+                تحديث
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
 
-        {/* Dialog: تعديل قيم الملخص */}
-        <Dialog
-          open={!!editingField}
-          onOpenChange={(open) => {
-            if (!open) {
-              setEditingField(null);
-              setEditingValue("");
-            }
-          }}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>تعديل قيمة الملخص</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>القيمة الجديدة</Label>
-                <Input type="number" value={editingValue} onChange={(e) => setEditingValue(e.target.value)} />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setEditingField(null);
-                    setEditingValue("");
-                  }}
-                >
-                  إلغاء
-                </Button>
-                <Button onClick={handleEditSummary}>حفظ</Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        {/* Dialog: المرتجع */}
+        {/* Return Dialog */}
         <Dialog open={returnDialogOpen} onOpenChange={setReturnDialogOpen}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>تسجيل مرتجع</DialogTitle>
             </DialogHeader>
-
-            {!selectedOrderForReturn ? (
-              <p className="text-muted-foreground">لا يوجد أوردر محدد.</p>
-            ) : (
+            {selectedOrderForReturn && (
               <div className="space-y-4">
-                <div className="rounded-lg border p-3 text-sm">
-                  <div className="font-medium">
-                    أوردر #{selectedOrderForReturn.order_number || selectedOrderForReturn.id.slice(0, 8)}
-                  </div>
-                  <div className="text-muted-foreground mt-1">
-                    {selectedOrderForReturn.customers?.name} - {selectedOrderForReturn.customers?.phone}
-                  </div>
+                <div>
+                  <h3 className="font-bold mb-2">الأوردر: {selectedOrderForReturn.id.slice(0, 8)}...</h3>
+                  <p>العميل: {selectedOrderForReturn.customers?.name}</p>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>القطع المرتجعة</Label>
-                  <div className="space-y-2">
-                    {returnData.returned_items.map((item, idx) => (
-                      <div key={idx} className="flex items-center gap-3 flex-wrap rounded-lg border p-3">
-                        <div className="flex-1 min-w-[200px]">
-                          <div className="font-medium">{item.product_name}</div>
-                          <div className="text-xs text-muted-foreground">
-                            سعر: {item.price.toFixed(2)} | الكمية: {item.total_quantity}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Label className="text-xs">مرتجع</Label>
-                          <Input
-                            type="number"
-                            value={item.returned_quantity}
-                            min={0}
-                            max={item.total_quantity}
-                            className="w-24"
-                            onChange={(e) => handleReturnQuantityChange(idx, parseInt(e.target.value || "0", 10))}
-                          />
-                        </div>
+                <div>
+                  <h3 className="font-bold mb-2">المنتجات المرتجعة</h3>
+                  {returnData.returned_items.map((item, index) => (
+                    <div key={index} className="flex items-center gap-4 mb-3 p-3 bg-accent rounded-lg">
+                      <div className="flex-1">
+                        <p className="font-medium">{item.product_name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          الكمية الكلية: {item.total_quantity} | السعر: {item.price.toFixed(2)} ج.م
+                        </p>
                       </div>
-                    ))}
-                  </div>
+                      <div className="w-32">
+                        <Label htmlFor={`return-qty-${index}`} className="text-xs">
+                          الكمية المرتجعة
+                        </Label>
+                        <Input
+                          id={`return-qty-${index}`}
+                          type="number"
+                          min="0"
+                          max={item.total_quantity}
+                          value={item.returned_quantity}
+                          onChange={(e) => handleReturnQuantityChange(index, parseInt(e.target.value) || 0)}
+                        />
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    checked={returnData.removeShipping}
-                    onCheckedChange={(checked) => setReturnData({ ...returnData, removeShipping: Boolean(checked) })}
-                  />
-                  <span className="text-sm">مرتجع دون شحن</span>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>ملاحظات</Label>
+                <div>
+                  <Label htmlFor="return-notes">ملاحظات</Label>
                   <Textarea
+                    id="return-notes"
                     value={returnData.notes}
                     onChange={(e) => setReturnData({ ...returnData, notes: e.target.value })}
+                    placeholder="سبب المرتجع..."
                     rows={3}
                   />
                 </div>
 
-                <div className="flex justify-end gap-2">
-                  <Button variant="ghost" onClick={() => setReturnDialogOpen(false)}>
-                    إلغاء
-                  </Button>
-                  <Button onClick={handleSubmitReturn}>تسجيل المرتجع</Button>
+                <div className="flex items-center space-x-2 space-x-reverse">
+                  <Checkbox
+                    id="remove-shipping"
+                    checked={returnData.removeShipping}
+                    onCheckedChange={(checked) => 
+                      setReturnData({ ...returnData, removeShipping: checked as boolean })
+                    }
+                  />
+                  <Label htmlFor="remove-shipping" className="cursor-pointer">
+                    مرتجع دون شحن (خصم الشحن من المستحقات)
+                  </Label>
                 </div>
+
+                <div className="p-4 bg-accent rounded-lg">
+                  <p className="font-bold text-lg text-destructive">
+                    قيمة المرتجع: {returnData.returned_items
+                      .reduce((sum, item) => sum + (item.price * item.returned_quantity), 0)
+                      .toFixed(2)} ج.م
+                  </p>
+                  {returnData.removeShipping && selectedOrderForReturn && (
+                    <p className="font-bold text-sm text-orange-600 mt-2">
+                      سيتم خصم الشحن: {parseFloat(selectedOrderForReturn.shipping_cost?.toString() || "0").toFixed(2)} ج.م
+                    </p>
+                  )}
+                </div>
+
+                <Button onClick={handleSubmitReturn} className="w-full">
+                  تأكيد المرتجع
+                </Button>
               </div>
             )}
           </DialogContent>
@@ -1735,4 +1934,3 @@ const AgentOrders = () => {
 };
 
 export default AgentOrders;
-
