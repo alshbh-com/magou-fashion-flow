@@ -74,6 +74,13 @@ const AgentOrders = () => {
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState<string>("");
   const [paymentDate, setPaymentDate] = useState<string>(today); // تاريخ الدفعة
+
+  // إدارة/تعديل/حذف الدفعات لأي يوم
+  const [paymentsManagerOpen, setPaymentsManagerOpen] = useState(false);
+  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
+  const [editPaymentAmount, setEditPaymentAmount] = useState<string>("");
+  const [editPaymentDate, setEditPaymentDate] = useState<string>(today);
+
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState<string>("");
 
@@ -249,19 +256,36 @@ const AgentOrders = () => {
   const calculateSummary = (dateFilter?: string) => {
     if (!agentPaymentsData || !allAgentOrders) return null;
 
+    // Map order_id -> assigned_at day (stable)
+    const orderAssignedDateById = new Map<string, string>();
+    allAgentOrders.forEach((o: any) => {
+      orderAssignedDateById.set(
+        o.id,
+        getDateKey((o as any).assigned_at || o.updated_at || o.created_at)
+      );
+    });
+
+    const getPaymentAccountingDate = (p: any) => {
+      // Manual payments are the ONLY ones that should follow payment_date as entered.
+      if (p.payment_type === "payment") {
+        return (p as any).payment_date || getDateKey(p.created_at || "");
+      }
+
+      // Order-related movements should follow the order assignment day
+      if (p.order_id && orderAssignedDateById.has(p.order_id)) {
+        return orderAssignedDateById.get(p.order_id)!;
+      }
+
+      return (p as any).payment_date || getDateKey(p.created_at || "");
+    };
+
     let paymentsToUse = agentPaymentsData;
     let ordersToUse = allAgentOrders;
 
     if (dateFilter) {
-      // فلترة الدفعات بناءً على payment_date (التاريخ المختار) وليس created_at
-      paymentsToUse = agentPaymentsData.filter((p) => {
-        // استخدم payment_date إذا موجود، وإلا استخدم created_at
-        const pDate = (p as any).payment_date || getDateKey(p.created_at || "");
-        return pDate === dateFilter;
-      });
+      paymentsToUse = agentPaymentsData.filter((p) => getPaymentAccountingDate(p) === dateFilter);
 
-      ordersToUse = allAgentOrders.filter((o) => {
-        // استخدم assigned_at كتاريخ تعيين ثابت (ولا يتغير مع أي تعديل لاحق)
+      ordersToUse = allAgentOrders.filter((o: any) => {
         const assignDate = getDateKey((o as any).assigned_at || o.updated_at || o.created_at);
         return assignDate === dateFilter;
       });
@@ -368,38 +392,45 @@ const AgentOrders = () => {
   
   const uniqueDates = generateDateRange(agentCreatedAt, today).reverse();
 
+  const recalcAgentTotalPaid = async (agentId: string) => {
+    const { data, error } = await supabase
+      .from("agent_payments")
+      .select("amount")
+      .eq("delivery_agent_id", agentId)
+      .eq("payment_type", "payment");
+
+    if (error) throw error;
+
+    const totalPaid = (data || []).reduce(
+      (sum, r: any) => sum + parseFloat((r.amount ?? 0).toString()),
+      0
+    );
+
+    const { error: updateError } = await supabase
+      .from("delivery_agents")
+      .update({ total_paid: totalPaid })
+      .eq("id", agentId);
+
+    if (updateError) throw updateError;
+  };
+
   // Add payment mutation
   const addPaymentMutation = useMutation({
     mutationFn: async ({ amount, selectedDate }: { amount: number; selectedDate: string }) => {
       if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
 
-      const { error } = await supabase
-        .from("agent_payments")
-        .insert({
-          delivery_agent_id: selectedAgentId,
-          amount: amount,
-          payment_type: 'payment',
-          payment_date: selectedDate,
-          notes: `دفعة مقدمة - ${amount.toFixed(2)} ج.م (${selectedDate})`
-        });
+      const { error } = await supabase.from("agent_payments").insert({
+        delivery_agent_id: selectedAgentId,
+        amount,
+        payment_type: "payment",
+        payment_date: selectedDate,
+        notes: `دفعة مقدمة - ${amount.toFixed(2)} ج.م (${selectedDate})`,
+      });
 
       if (error) throw error;
 
-      // Update agent total_paid
-      const { data: agent, error: agentError } = await supabase
-        .from("delivery_agents")
-        .select("total_paid")
-        .eq("id", selectedAgentId)
-        .single();
-
-      if (agentError) throw agentError;
-
-      const newTotalPaid = parseFloat(agent.total_paid?.toString() || "0") + amount;
-      
-      await supabase
-        .from("delivery_agents")
-        .update({ total_paid: newTotalPaid })
-        .eq("id", selectedAgentId);
+      // Keep delivery_agents.total_paid consistent (supports edit/delete later)
+      await recalcAgentTotalPaid(selectedAgentId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["agent_payments_full"] });
@@ -411,7 +442,7 @@ const AgentOrders = () => {
     },
     onError: () => {
       toast.error("حدث خطأ أثناء إضافة الدفعة");
-    }
+    },
   });
 
   // Edit summary field mutation
@@ -457,6 +488,58 @@ const AgentOrders = () => {
     onError: () => {
       toast.error("حدث خطأ أثناء التعديل");
     }
+  });
+
+  const updatePaymentMutation = useMutation({
+    mutationFn: async ({ id, amount, payment_date }: { id: string; amount: number; payment_date: string }) => {
+      if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
+
+      const { error } = await supabase
+        .from("agent_payments")
+        .update({
+          amount,
+          payment_date,
+          notes: `دفعة معدلة - ${amount.toFixed(2)} ج.م (${payment_date})`,
+        })
+        .eq("id", id)
+        .eq("delivery_agent_id", selectedAgentId)
+        .eq("payment_type", "payment");
+
+      if (error) throw error;
+
+      await recalcAgentTotalPaid(selectedAgentId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agent_payments_full"] });
+      queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
+      toast.success("تم تعديل الدفعة");
+      setEditingPaymentId(null);
+    },
+    onError: () => toast.error("حدث خطأ أثناء تعديل الدفعة"),
+  });
+
+  const deletePaymentMutation = useMutation({
+    mutationFn: async ({ id }: { id: string }) => {
+      if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
+
+      const { error } = await supabase
+        .from("agent_payments")
+        .delete()
+        .eq("id", id)
+        .eq("delivery_agent_id", selectedAgentId)
+        .eq("payment_type", "payment");
+
+      if (error) throw error;
+
+      await recalcAgentTotalPaid(selectedAgentId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agent_payments_full"] });
+      queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
+      toast.success("تم حذف الدفعة");
+      setEditingPaymentId(null);
+    },
+    onError: () => toast.error("حدث خطأ أثناء حذف الدفعة"),
   });
 
   const handleAddPayment = () => {
@@ -1620,14 +1703,15 @@ const AgentOrders = () => {
               <div className="flex items-center justify-between flex-wrap gap-4">
                 <CardTitle>ملخص مستحقات المندوب</CardTitle>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Button 
-                    size="sm" 
+                  <Button
+                    size="sm"
                     variant="outline"
                     onClick={() => handlePrintSummary()}
                   >
                     <Printer className="ml-2 h-4 w-4" />
                     طباعة الملخص
                   </Button>
+
                   <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
                     <DialogTrigger asChild>
                       <Button size="sm">
@@ -1669,14 +1753,173 @@ const AgentOrders = () => {
                         </p>
                       </div>
                       <div className="flex justify-end gap-2">
-                        <Button variant="outline" onClick={() => {
-                          setPaymentDialogOpen(false);
-                          setPaymentDate(today);
-                        }}>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setPaymentDialogOpen(false);
+                            setPaymentDate(today);
+                          }}
+                        >
                           إلغاء
                         </Button>
-                        <Button onClick={handleAddPayment}>
-                          إضافة الدفعة
+                        <Button onClick={handleAddPayment}>إضافة الدفعة</Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+
+                  <Dialog open={paymentsManagerOpen} onOpenChange={setPaymentsManagerOpen}>
+                    <DialogTrigger asChild>
+                      <Button size="sm" variant="outline">
+                        <Calendar className="ml-2 h-4 w-4" />
+                        تعديل/حذف الدفعات
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-3xl">
+                      <DialogHeader>
+                        <DialogTitle>دفعات يوم {summaryDateFilter}</DialogTitle>
+                      </DialogHeader>
+
+                      {(() => {
+                        const dayPayments = (agentPaymentsData || [])
+                          .filter((p: any) => {
+                            const pDate = (p as any).payment_date || getDateKey(p.created_at || "");
+                            return p.payment_type === "payment" && pDate === summaryDateFilter;
+                          })
+                          .sort((a: any, b: any) =>
+                            new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+                          );
+
+                        if (dayPayments.length === 0) {
+                          return (
+                            <p className="text-sm text-muted-foreground py-4">
+                              لا توجد دفعات مسجلة لهذا اليوم.
+                            </p>
+                          );
+                        }
+
+                        return (
+                          <div className="overflow-x-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>المبلغ</TableHead>
+                                  <TableHead>اليوم</TableHead>
+                                  <TableHead>ملاحظات</TableHead>
+                                  <TableHead className="text-left">إجراء</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {dayPayments.map((p: any) => {
+                                  const currentDate = (p as any).payment_date || getDateKey(p.created_at || "");
+                                  const isEditing = editingPaymentId === p.id;
+                                  return (
+                                    <TableRow key={p.id}>
+                                      <TableCell>
+                                        {isEditing ? (
+                                          <Input
+                                            type="number"
+                                            value={editPaymentAmount}
+                                            onChange={(e) => setEditPaymentAmount(e.target.value)}
+                                          />
+                                        ) : (
+                                          `${parseFloat((p.amount ?? 0).toString()).toFixed(2)} ج.م`
+                                        )}
+                                      </TableCell>
+                                      <TableCell>
+                                        {isEditing ? (
+                                          <Input
+                                            type="date"
+                                            value={editPaymentDate}
+                                            onChange={(e) => setEditPaymentDate(e.target.value)}
+                                          />
+                                        ) : (
+                                          currentDate
+                                        )}
+                                      </TableCell>
+                                      <TableCell className="max-w-[320px] truncate">
+                                        {p.notes || "-"}
+                                      </TableCell>
+                                      <TableCell>
+                                        <div className="flex items-center gap-2 justify-end">
+                                          {isEditing ? (
+                                            <>
+                                              <Button
+                                                size="sm"
+                                                onClick={() => {
+                                                  const amt = parseFloat(editPaymentAmount);
+                                                  if (isNaN(amt) || amt <= 0) return toast.error("مبلغ غير صحيح");
+                                                  updatePaymentMutation.mutate({
+                                                    id: p.id,
+                                                    amount: amt,
+                                                    payment_date: editPaymentDate,
+                                                  });
+                                                }}
+                                              >
+                                                حفظ
+                                              </Button>
+                                              <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => setEditingPaymentId(null)}
+                                              >
+                                                إلغاء
+                                              </Button>
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => {
+                                                  setEditingPaymentId(p.id);
+                                                  setEditPaymentAmount(
+                                                    parseFloat((p.amount ?? 0).toString()).toFixed(2)
+                                                  );
+                                                  setEditPaymentDate(currentDate);
+                                                }}
+                                              >
+                                                <Edit2 className="h-4 w-4" />
+                                              </Button>
+
+                                              <AlertDialog>
+                                                <AlertDialogTrigger asChild>
+                                                  <Button size="sm" variant="destructive">
+                                                    <Trash2 className="h-4 w-4" />
+                                                  </Button>
+                                                </AlertDialogTrigger>
+                                                <AlertDialogContent>
+                                                  <AlertDialogHeader>
+                                                    <AlertDialogTitle>حذف الدفعة</AlertDialogTitle>
+                                                    <AlertDialogDescription>
+                                                      هل أنت متأكد من حذف هذه الدفعة؟
+                                                    </AlertDialogDescription>
+                                                  </AlertDialogHeader>
+                                                  <AlertDialogFooter>
+                                                    <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                                                    <AlertDialogAction
+                                                      onClick={() => deletePaymentMutation.mutate({ id: p.id })}
+                                                    >
+                                                      حذف
+                                                    </AlertDialogAction>
+                                                  </AlertDialogFooter>
+                                                </AlertDialogContent>
+                                              </AlertDialog>
+                                            </>
+                                          )}
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        );
+                      })()}
+
+                      <div className="flex justify-end">
+                        <Button variant="outline" onClick={() => setPaymentsManagerOpen(false)}>
+                          إغلاق
                         </Button>
                       </div>
                     </DialogContent>
