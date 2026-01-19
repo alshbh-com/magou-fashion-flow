@@ -12,10 +12,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ArrowLeft, PackageX, Printer, Download, AlertTriangle, Trash2, MessageCircle, ArrowDown, Plus, Edit2, ChevronDown, ChevronUp, Calendar } from "lucide-react";
+import { ArrowLeft, PackageX, Printer, Download, AlertTriangle, Trash2, MessageCircle, ArrowDown, Plus, Edit2, ChevronDown, ChevronUp, Calendar, Package } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import * as XLSX from 'xlsx';
+import { useActivityLogger } from "@/hooks/useActivityLogger";
 
 const statusLabels: Record<string, string> = {
   shipped: "تم الشحن",
@@ -34,6 +35,7 @@ const statusColors: Record<string, string> = {
 const AgentOrders = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { logAction } = useActivityLogger();
   const summaryRef = useRef<HTMLDivElement>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -200,7 +202,7 @@ const AgentOrders = () => {
     enabled: !!selectedAgentId
   });
 
-  // Query for all orders for this agent (for summary)
+  // Query for all orders for this agent (for summary) - includes order_items for product quantities
   const { data: allAgentOrders } = useQuery({
     queryKey: ["all-agent-orders", selectedAgentId],
     queryFn: async () => {
@@ -210,7 +212,12 @@ const AgentOrders = () => {
         .from("orders")
         .select(`
           *,
-          customers (name, phone, address, governorate)
+          customers (name, phone, address, governorate),
+          order_items (
+            quantity,
+            product_id,
+            products (name)
+          )
         `)
         .eq("delivery_agent_id", selectedAgentId)
         .order("assigned_at", { ascending: false });
@@ -346,6 +353,24 @@ const AgentOrders = () => {
       return sum + total + shipping - agentShipping;
     }, 0);
 
+    // حساب عدد القطع لكل منتج (من جميع أوردرات اليوم)
+    const productQuantities: Record<string, number> = {};
+    ordersToUse.forEach((order: any) => {
+      const orderItems = order.order_items || [];
+      orderItems.forEach((item: any) => {
+        const productName = item.products?.name || "منتج غير معروف";
+        const qty = item.quantity || 0;
+        productQuantities[productName] = (productQuantities[productName] || 0) + qty;
+      });
+    });
+
+    // تحويل لمصفوفة ثم ترتيب بالكمية تنازلياً
+    const productQuantitiesArray = Object.entries(productQuantities)
+      .map(([name, quantity]) => ({ name, quantity }))
+      .sort((a, b) => b.quantity - a.quantity);
+
+    const totalProductQuantity = productQuantitiesArray.reduce((sum, p) => sum + p.quantity, 0);
+
     return {
       totalOwed,
       totalPaid,
@@ -362,6 +387,8 @@ const AgentOrders = () => {
       shippedTotal,
       deliveredTotal,
       returnedTotal,
+      productQuantitiesArray,
+      totalProductQuantity,
     };
   };
 
@@ -491,8 +518,10 @@ const AgentOrders = () => {
   });
 
   const updatePaymentMutation = useMutation({
-    mutationFn: async ({ id, amount, payment_date }: { id: string; amount: number; payment_date: string }) => {
+    mutationFn: async ({ id, amount, payment_date, oldAmount, oldDate }: { id: string; amount: number; payment_date: string; oldAmount: number; oldDate: string }) => {
       if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
+
+      const agentName = agents?.find(a => a.id === selectedAgentId)?.name || "مندوب";
 
       const { error } = await supabase
         .from("agent_payments")
@@ -508,6 +537,16 @@ const AgentOrders = () => {
       if (error) throw error;
 
       await recalcAgentTotalPaid(selectedAgentId);
+
+      // Log the activity
+      await logAction("تعديل دفعة مندوب", "agent_payments", {
+        agent_name: agentName,
+        payment_id: id,
+        old_amount: oldAmount,
+        new_amount: amount,
+        old_date: oldDate,
+        new_date: payment_date,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["agent_payments_full"] });
@@ -519,8 +558,10 @@ const AgentOrders = () => {
   });
 
   const deletePaymentMutation = useMutation({
-    mutationFn: async ({ id }: { id: string }) => {
+    mutationFn: async ({ id, deletedAmount, deletedDate }: { id: string; deletedAmount: number; deletedDate: string }) => {
       if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
+
+      const agentName = agents?.find(a => a.id === selectedAgentId)?.name || "مندوب";
 
       const { error } = await supabase
         .from("agent_payments")
@@ -532,6 +573,14 @@ const AgentOrders = () => {
       if (error) throw error;
 
       await recalcAgentTotalPaid(selectedAgentId);
+
+      // Log the activity
+      await logAction("حذف دفعة مندوب", "agent_payments", {
+        agent_name: agentName,
+        payment_id: id,
+        deleted_amount: deletedAmount,
+        deleted_date: deletedDate,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["agent_payments_full"] });
@@ -1848,10 +1897,13 @@ const AgentOrders = () => {
                                                 onClick={() => {
                                                   const amt = parseFloat(editPaymentAmount);
                                                   if (isNaN(amt) || amt <= 0) return toast.error("مبلغ غير صحيح");
+                                                  const oldAmt = parseFloat((p.amount ?? 0).toString());
                                                   updatePaymentMutation.mutate({
                                                     id: p.id,
                                                     amount: amt,
                                                     payment_date: editPaymentDate,
+                                                    oldAmount: oldAmt,
+                                                    oldDate: currentDate,
                                                   });
                                                 }}
                                               >
@@ -1897,7 +1949,14 @@ const AgentOrders = () => {
                                                   <AlertDialogFooter>
                                                     <AlertDialogCancel>إلغاء</AlertDialogCancel>
                                                     <AlertDialogAction
-                                                      onClick={() => deletePaymentMutation.mutate({ id: p.id })}
+                                                      onClick={() => {
+                                                        const delAmt = parseFloat((p.amount ?? 0).toString());
+                                                        deletePaymentMutation.mutate({ 
+                                                          id: p.id, 
+                                                          deletedAmount: delAmt, 
+                                                          deletedDate: currentDate 
+                                                        });
+                                                      }}
                                                     >
                                                       حذف
                                                     </AlertDialogAction>
@@ -1944,118 +2003,150 @@ const AgentOrders = () => {
             </CardHeader>
             <CardContent>
               {summaryData ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {/* الصافي المطلوب من المندوب (يومي) */}
-                  <div className="p-4 bg-red-50 dark:bg-red-950/20 rounded-lg border border-red-200 dark:border-red-800">
-                    <p className="text-sm text-muted-foreground mb-1">الصافي المطلوب من المندوب (اليوم)</p>
-                    <p className={`text-2xl font-bold ${summaryData.agentReceivables >= 0 ? 'text-red-600' : 'text-green-600'}`}>
-                      {summaryData.agentReceivables.toFixed(2)} ج.م
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      = صافي المطلوب ({summaryData.netRequired.toFixed(2)}) - المسلم ({summaryData.totalDelivered.toFixed(2)}) - الدفعات ({summaryData.totalPaid.toFixed(2)})
-                    </p>
-                  </div>
-
-                  {/* الأوردرات المسلمة */}
-                  <div className="p-4 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
-                    <div className="flex items-center justify-between mb-1">
-                      <p className="text-sm text-muted-foreground">الأوردرات المسلمة</p>
-                      {summaryDateFilter === today && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={() => {
-                            setEditingField('delivered');
-                            setEditingValue(summaryData.totalDelivered.toFixed(2));
-                          }}
-                        >
-                          <Edit2 className="h-3 w-3" />
-                        </Button>
-                      )}
-                    </div>
-                    {editingField === 'delivered' ? (
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="number"
-                          value={editingValue}
-                          onChange={(e) => setEditingValue(e.target.value)}
-                          className="h-8"
-                        />
-                        <Button size="sm" onClick={handleEditSummary}>حفظ</Button>
-                        <Button size="sm" variant="outline" onClick={() => setEditingField(null)}>إلغاء</Button>
-                      </div>
-                    ) : (
-                      <>
-                        <p className="text-2xl font-bold text-green-600">
-                          {summaryData.totalDelivered.toFixed(2)} ج.م
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          عدد: {summaryData.deliveredCount} أوردر
-                        </p>
-                      </>
-                    )}
-                  </div>
-
-                  {/* الدفعة المقدمة */}
-                  <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                    <div className="flex items-center justify-between mb-1">
-                      <p className="text-sm text-muted-foreground">الدفعة المقدمة</p>
-                      {summaryDateFilter === today && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={() => {
-                            setEditingField('payment');
-                            setEditingValue(summaryData.totalPaid.toFixed(2));
-                          }}
-                        >
-                          <Edit2 className="h-3 w-3" />
-                        </Button>
-                      )}
-                    </div>
-                    {editingField === 'payment' ? (
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="number"
-                          value={editingValue}
-                          onChange={(e) => setEditingValue(e.target.value)}
-                          className="h-8"
-                        />
-                        <Button size="sm" onClick={handleEditSummary}>حفظ</Button>
-                        <Button size="sm" variant="outline" onClick={() => setEditingField(null)}>إلغاء</Button>
-                      </div>
-                    ) : (
-                      <p className="text-2xl font-bold text-blue-600">
-                        {summaryData.totalPaid.toFixed(2)} ج.م
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {/* الصافي المطلوب من المندوب (يومي) */}
+                    <div className="p-4 bg-red-50 dark:bg-red-950/20 rounded-lg border border-red-200 dark:border-red-800">
+                      <p className="text-sm text-muted-foreground mb-1">الصافي المطلوب من المندوب (اليوم)</p>
+                      <p className={`text-2xl font-bold ${summaryData.agentReceivables >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        {summaryData.agentReceivables.toFixed(2)} ج.م
                       </p>
-                    )}
-                  </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        = صافي المطلوب ({summaryData.netRequired.toFixed(2)}) - المسلم ({summaryData.totalDelivered.toFixed(2)}) - الدفعات ({summaryData.totalPaid.toFixed(2)})
+                      </p>
+                    </div>
+
+                    {/* الأوردرات المسلمة */}
+                    <div className="p-4 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-sm text-muted-foreground">الأوردرات المسلمة</p>
+                        {summaryDateFilter === today && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => {
+                              setEditingField('delivered');
+                              setEditingValue(summaryData.totalDelivered.toFixed(2));
+                            }}
+                          >
+                            <Edit2 className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                      {editingField === 'delivered' ? (
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            value={editingValue}
+                            onChange={(e) => setEditingValue(e.target.value)}
+                            className="h-8"
+                          />
+                          <Button size="sm" onClick={handleEditSummary}>حفظ</Button>
+                          <Button size="sm" variant="outline" onClick={() => setEditingField(null)}>إلغاء</Button>
+                        </div>
+                      ) : (
+                        <>
+                          <p className="text-2xl font-bold text-green-600">
+                            {summaryData.totalDelivered.toFixed(2)} ج.م
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            عدد: {summaryData.deliveredCount} أوردر
+                          </p>
+                        </>
+                      )}
+                    </div>
+
+                    {/* الدفعة المقدمة */}
+                    <div className="p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-sm text-muted-foreground">الدفعة المقدمة</p>
+                        {summaryDateFilter === today && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => {
+                              setEditingField('payment');
+                              setEditingValue(summaryData.totalPaid.toFixed(2));
+                            }}
+                          >
+                            <Edit2 className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                      {editingField === 'payment' ? (
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            value={editingValue}
+                            onChange={(e) => setEditingValue(e.target.value)}
+                            className="h-8"
+                          />
+                          <Button size="sm" onClick={handleEditSummary}>حفظ</Button>
+                          <Button size="sm" variant="outline" onClick={() => setEditingField(null)}>إلغاء</Button>
+                        </div>
+                      ) : (
+                        <p className="text-2xl font-bold text-blue-600">
+                          {summaryData.totalPaid.toFixed(2)} ج.م
+                        </p>
+                      )}
+                    </div>
 
 
-                  {/* المرتجعات */}
-                  <div className="p-4 bg-orange-50 dark:bg-orange-950/20 rounded-lg border border-orange-200 dark:border-orange-800">
-                    <p className="text-sm text-muted-foreground mb-1">المرتجعات</p>
-                    <p className="text-2xl font-bold text-orange-600">
-                      {summaryData.returnedCount} أوردر
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      بقيمة: {summaryData.returnedTotal.toFixed(2)} ج.م
-                    </p>
+                    {/* المرتجعات */}
+                    <div className="p-4 bg-orange-50 dark:bg-orange-950/20 rounded-lg border border-orange-200 dark:border-orange-800">
+                      <p className="text-sm text-muted-foreground mb-1">المرتجعات</p>
+                      <p className="text-2xl font-bold text-orange-600">
+                        {summaryData.returnedCount} أوردر
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        بقيمة: {summaryData.returnedTotal.toFixed(2)} ج.م
+                      </p>
+                    </div>
+
+                    {/* أوردرات في الطريق */}
+                    <div className="p-4 bg-yellow-50 dark:bg-yellow-950/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                      <p className="text-sm text-muted-foreground mb-1">أوردرات في الطريق</p>
+                      <p className="text-2xl font-bold text-yellow-600">
+                        {summaryData.shippedCount} أوردر
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        بقيمة: {summaryData.shippedTotal.toFixed(2)} ج.م
+                      </p>
+                    </div>
                   </div>
 
-                  {/* أوردرات في الطريق */}
-                  <div className="p-4 bg-yellow-50 dark:bg-yellow-950/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
-                    <p className="text-sm text-muted-foreground mb-1">أوردرات في الطريق</p>
-                    <p className="text-2xl font-bold text-yellow-600">
-                      {summaryData.shippedCount} أوردر
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      بقيمة: {summaryData.shippedTotal.toFixed(2)} ج.م
-                    </p>
-                  </div>
-                </div>
+                  {/* قسم عدد القطع لكل منتج */}
+                  {summaryData.productQuantitiesArray && summaryData.productQuantitiesArray.length > 0 && (
+                    <div className="mt-6 p-4 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Package className="h-5 w-5 text-purple-600" />
+                        <h3 className="text-lg font-semibold text-purple-700 dark:text-purple-300">
+                          إجمالي القطع في يوم {summaryDateFilter}
+                        </h3>
+                        <Badge variant="secondary" className="bg-purple-200 text-purple-800">
+                          {summaryData.totalProductQuantity} قطعة
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                        {summaryData.productQuantitiesArray.map((product, idx) => (
+                          <div 
+                            key={idx} 
+                            className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 rounded border border-purple-100 dark:border-purple-700"
+                          >
+                            <span className="text-sm font-medium truncate flex-1 ml-2">
+                              {product.name}
+                            </span>
+                            <Badge className="bg-purple-600 text-white">
+                              {product.quantity}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               ) : (
                 <p className="text-center text-muted-foreground py-4">لا توجد بيانات</p>
               )}
