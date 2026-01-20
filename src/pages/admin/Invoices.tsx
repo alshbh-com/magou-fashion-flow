@@ -3,14 +3,21 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ArrowLeft, Printer, FileSpreadsheet } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ArrowLeft, Printer, FileSpreadsheet, Filter } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import * as XLSX from "xlsx";
 
 const Invoices = () => {
   const navigate = useNavigate();
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
+  
+  // فلاتر
+  const [dateFilter, setDateFilter] = useState<string>("");
+  const [governorateFilter, setGovernorateFilter] = useState<string>("all");
 
   const { data: orders, isLoading } = useQuery({
     queryKey: ["orders-for-invoices"],
@@ -30,10 +37,73 @@ const Invoices = () => {
     },
   });
 
-  const handleExportExcel = () => {
-    if (!orders?.length) return;
+  // جلب المحافظات للفلتر
+  const { data: governorates } = useQuery({
+    queryKey: ["governorates-filter"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("governorates")
+        .select("id, name")
+        .order("name");
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // تحويل التاريخ ليوم Cairo
+  const getDateKey = (value: string | Date) => {
+    const d = typeof value === "string" ? new Date(value) : value;
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Africa/Cairo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(d);
+  };
+
+  // استخراج التواريخ الفريدة من الأوردرات
+  const uniqueDates = useMemo(() => {
+    if (!orders?.length) return [];
+    const dates = new Set<string>();
+    orders.forEach(order => {
+      dates.add(getDateKey(order.created_at));
+    });
+    return Array.from(dates).sort().reverse();
+  }, [orders]);
+
+  // فلترة الأوردرات
+  const filteredOrders = useMemo(() => {
+    if (!orders?.length) return [];
     
-    const exportData = orders.map(order => {
+    return orders.filter(order => {
+      // فلتر التاريخ
+      if (dateFilter) {
+        const orderDate = getDateKey(order.created_at);
+        if (orderDate !== dateFilter) return false;
+      }
+      
+      // فلتر المحافظة
+      if (governorateFilter && governorateFilter !== "all") {
+        const orderGov = order.governorates?.name || order.customers?.governorate || "";
+        if (orderGov !== governorateFilter) return false;
+      }
+      
+      return true;
+    });
+  }, [orders, dateFilter, governorateFilter]);
+
+  // تصدير Excel للأوردرات المفلترة/المحددة فقط
+  const handleExportExcel = () => {
+    // إذا كان هناك أوردرات محددة، صدّرها فقط، وإلا صدّر المفلتر
+    const ordersToExport = selectedOrders.length > 0 
+      ? filteredOrders.filter(o => selectedOrders.includes(o.id))
+      : filteredOrders;
+    
+    if (!ordersToExport?.length) {
+      return;
+    }
+    
+    const exportData = ordersToExport.map(order => {
       const totalAmount = parseFloat(order.total_amount.toString());
       const customerShipping = parseFloat((order.shipping_cost || 0).toString());
       const agentShipping = parseFloat((order.agent_shipping_cost || 0).toString());
@@ -45,7 +115,7 @@ const Invoices = () => {
         "اسم العميل": order.customers?.name || "-",
         "الهاتف": order.customers?.phone || "-",
         "العنوان": order.customers?.address || "-",
-        "المحافظة": order.customers?.governorate || "-",
+        "المحافظة": order.governorates?.name || order.customers?.governorate || "-",
         "المندوب": order.delivery_agents?.name || "-",
         "الحالة": order.status,
         "سعر المنتجات": totalAmount.toFixed(2),
@@ -61,11 +131,15 @@ const Invoices = () => {
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "الأوردرات");
-    XLSX.writeFile(wb, `orders_${new Date().toISOString().split('T')[0]}.xlsx`);
+    
+    const fileName = dateFilter 
+      ? `orders_${dateFilter}.xlsx`
+      : `orders_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, fileName);
   };
 
   const handlePrint = () => {
-    const ordersToPrint = orders?.filter(o => selectedOrders.includes(o.id));
+    const ordersToPrint = filteredOrders?.filter(o => selectedOrders.includes(o.id));
     if (!ordersToPrint?.length) return;
 
     const printWindow = window.open('', '_blank');
@@ -147,6 +221,15 @@ const Invoices = () => {
     printWindow.print();
   };
 
+  // تحديد/إلغاء تحديد الكل
+  const handleSelectAll = () => {
+    if (selectedOrders.length === filteredOrders.length) {
+      setSelectedOrders([]);
+    } else {
+      setSelectedOrders(filteredOrders.map(o => o.id));
+    }
+  };
+
   if (isLoading) return <div className="p-8">جاري التحميل...</div>;
 
   return (
@@ -157,22 +240,85 @@ const Invoices = () => {
           رجوع
         </Button>
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>الفواتير</CardTitle>
-            <div className="flex gap-2">
-              <Button onClick={handleExportExcel}>
-                <FileSpreadsheet className="ml-2 h-4 w-4" />
-                تصدير Excel
+          <CardHeader className="flex flex-col gap-4">
+            <div className="flex flex-row items-center justify-between flex-wrap gap-4">
+              <CardTitle>الفواتير</CardTitle>
+              <div className="flex gap-2 flex-wrap">
+                <Button onClick={handleExportExcel} disabled={filteredOrders.length === 0}>
+                  <FileSpreadsheet className="ml-2 h-4 w-4" />
+                  تصدير Excel {selectedOrders.length > 0 ? `(${selectedOrders.length})` : `(${filteredOrders.length})`}
+                </Button>
+                <Button onClick={handlePrint} disabled={selectedOrders.length === 0}>
+                  <Printer className="ml-2 h-4 w-4" />
+                  طباعة ({selectedOrders.length})
+                </Button>
+              </div>
+            </div>
+            
+            {/* الفلاتر */}
+            <div className="flex items-end gap-4 flex-wrap p-4 bg-muted/50 rounded-lg">
+              <Filter className="h-5 w-5 text-muted-foreground" />
+              
+              <div className="flex flex-col gap-1">
+                <Label className="text-xs">التاريخ</Label>
+                <Select value={dateFilter} onValueChange={setDateFilter}>
+                  <SelectTrigger className="w-40">
+                    <SelectValue placeholder="كل الأيام" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">كل الأيام</SelectItem>
+                    {uniqueDates.map((date) => (
+                      <SelectItem key={date} value={date}>
+                        {new Date(date).toLocaleDateString('ar-EG')}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="flex flex-col gap-1">
+                <Label className="text-xs">المحافظة</Label>
+                <Select value={governorateFilter} onValueChange={setGovernorateFilter}>
+                  <SelectTrigger className="w-40">
+                    <SelectValue placeholder="كل المحافظات" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">كل المحافظات</SelectItem>
+                    {governorates?.map((gov) => (
+                      <SelectItem key={gov.id} value={gov.name}>
+                        {gov.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => {
+                  setDateFilter("");
+                  setGovernorateFilter("all");
+                }}
+              >
+                مسح الفلاتر
               </Button>
-              <Button onClick={handlePrint} disabled={selectedOrders.length === 0}>
-                <Printer className="ml-2 h-4 w-4" />
-                طباعة ({selectedOrders.length})
-              </Button>
+              
+              <div className="mr-auto text-sm text-muted-foreground">
+                عدد النتائج: {filteredOrders.length}
+              </div>
             </div>
           </CardHeader>
           <CardContent>
+            {filteredOrders.length > 0 && (
+              <div className="mb-4">
+                <Button variant="outline" size="sm" onClick={handleSelectAll}>
+                  {selectedOrders.length === filteredOrders.length ? "إلغاء تحديد الكل" : "تحديد الكل"}
+                </Button>
+              </div>
+            )}
             <div className="space-y-2">
-              {orders?.map((order) => {
+              {filteredOrders?.map((order) => {
                 const totalAmount = parseFloat(order.total_amount.toString());
                 const customerShipping = parseFloat((order.shipping_cost || 0).toString());
                 const agentShipping = parseFloat((order.agent_shipping_cost || 0).toString());
@@ -191,7 +337,15 @@ const Invoices = () => {
                       }}
                     />
                     <div className="flex-1">
-                      <p className="font-bold">{order.customers?.name}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-bold">{order.customers?.name}</p>
+                        <span className="text-xs px-2 py-0.5 rounded bg-muted">
+                          {order.governorates?.name || order.customers?.governorate || "-"}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(order.created_at).toLocaleDateString('ar-EG')}
+                        </span>
+                      </div>
                       <p className="text-sm text-muted-foreground">
                         الإجمالي: {totalPrice.toFixed(2)} ج.م | الصافي المطلوب من المندوب: {netAmount.toFixed(2)} ج.م
                       </p>
@@ -199,6 +353,12 @@ const Invoices = () => {
                   </div>
                 );
               })}
+              
+              {filteredOrders.length === 0 && (
+                <p className="text-center text-muted-foreground py-8">
+                  لا توجد فواتير تطابق الفلاتر المحددة
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
