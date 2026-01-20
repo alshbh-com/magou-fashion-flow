@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ArrowLeft, PackageX, Printer, Download, AlertTriangle, Trash2, MessageCircle, ArrowDown, Plus, Edit2, ChevronDown, ChevronUp, Calendar, Package } from "lucide-react";
+import { ArrowLeft, PackageX, Printer, Download, AlertTriangle, Trash2, MessageCircle, ArrowDown, Plus, Edit2, ChevronDown, ChevronUp, Calendar, Package, Check, Lock } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import * as XLSX from 'xlsx';
@@ -245,6 +245,29 @@ const AgentOrders = () => {
     },
     enabled: !!selectedAgentId
   });
+
+  // Query for daily closings
+  const { data: dailyClosings, refetch: refetchClosings } = useQuery({
+    queryKey: ["agent_daily_closings", selectedAgentId],
+    queryFn: async () => {
+      if (!selectedAgentId) return [];
+      
+      const { data, error } = await supabase
+        .from("agent_daily_closings")
+        .select("*")
+        .eq("delivery_agent_id", selectedAgentId)
+        .order("closing_date", { ascending: false });
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!selectedAgentId
+  });
+
+  // Check if a day is closed
+  const isDayClosed = (date: string) => {
+    return dailyClosings?.some((c: any) => c.closing_date === date);
+  };
 
   // Query for governorates
   const { data: governorates } = useQuery({
@@ -589,6 +612,50 @@ const AgentOrders = () => {
       setEditingPaymentId(null);
     },
     onError: () => toast.error("حدث خطأ أثناء حذف الدفعة"),
+  });
+
+  // Close day mutation
+  const closeDayMutation = useMutation({
+    mutationFn: async ({ date, netAmount }: { date: string; netAmount: number }) => {
+      if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
+
+      const agentName = agents?.find(a => a.id === selectedAgentId)?.name || "مندوب";
+      
+      // Get current user info from localStorage
+      const userDataStr = localStorage.getItem("adminUser");
+      const userData = userDataStr ? JSON.parse(userDataStr) : null;
+
+      const { error } = await supabase
+        .from("agent_daily_closings")
+        .insert({
+          delivery_agent_id: selectedAgentId,
+          closing_date: date,
+          net_amount: netAmount,
+          closed_by: userData?.id || null,
+          closed_by_username: userData?.username || "غير معروف",
+          notes: `تم التقفيل - صافي المستحق: ${netAmount.toFixed(2)} ج.م`,
+        });
+
+      if (error) throw error;
+
+      // Log the activity
+      await logAction("تقفيل يومية مندوب", "agent_daily_closings", {
+        agent_name: agentName,
+        closing_date: date,
+        net_amount: netAmount,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agent_daily_closings"] });
+      toast.success("تم تقفيل اليومية بنجاح");
+    },
+    onError: (error: any) => {
+      if (error?.message?.includes("duplicate")) {
+        toast.error("تم تقفيل هذا اليوم بالفعل");
+      } else {
+        toast.error("حدث خطأ أثناء التقفيل");
+      }
+    },
   });
 
   const handleAddPayment = () => {
@@ -1998,20 +2065,81 @@ const AgentOrders = () => {
                   </Dialog>
                 </div>
               </div>
-              <div className="mt-4">
-                <Label>اختر التاريخ:</Label>
-                <Select value={summaryDateFilter} onValueChange={setSummaryDateFilter}>
-                  <SelectTrigger className="w-48 mt-1">
-                    <SelectValue placeholder="اليوم" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {uniqueDates.map((date) => (
-                      <SelectItem key={date} value={date}>
-                        {new Date(date).toLocaleDateString('ar-EG')}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="mt-4 flex items-center gap-4 flex-wrap">
+                <div>
+                  <Label>اختر التاريخ:</Label>
+                  <Select value={summaryDateFilter} onValueChange={setSummaryDateFilter}>
+                    <SelectTrigger className="w-48 mt-1">
+                      <SelectValue placeholder="اليوم" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {uniqueDates.map((date) => (
+                        <SelectItem key={date} value={date}>
+                          <div className="flex items-center gap-2">
+                            {isDayClosed(date) && <Lock className="h-3 w-3 text-green-600" />}
+                            {new Date(date).toLocaleDateString('ar-EG')}
+                            {isDayClosed(date) && <span className="text-xs text-green-600">(مقفل)</span>}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                {/* زر التقفيل */}
+                {summaryData && !isDayClosed(summaryDateFilter) && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button 
+                        size="sm" 
+                        variant="default"
+                        className="mt-5 bg-green-600 hover:bg-green-700"
+                      >
+                        <Check className="ml-2 h-4 w-4" />
+                        تم التقفيل
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle className="flex items-center gap-2">
+                          <AlertTriangle className="h-5 w-5 text-yellow-500" />
+                          تأكيد التقفيل
+                        </AlertDialogTitle>
+                        <AlertDialogDescription className="space-y-2">
+                          <p>هل أنت متأكد من تقفيل يومية {new Date(summaryDateFilter).toLocaleDateString('ar-EG')}؟</p>
+                          <p className="font-bold">
+                            الصافي المستحق على المندوب: {summaryData.agentReceivables.toFixed(2)} ج.م
+                          </p>
+                          <p className="text-yellow-600 font-semibold">
+                            ⚠️ تنبيه: لا يمكن التراجع عن التقفيل بعد التأكيد
+                          </p>
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>إلغاء</AlertDialogCancel>
+                        <AlertDialogAction
+                          className="bg-green-600 hover:bg-green-700"
+                          onClick={() => {
+                            closeDayMutation.mutate({
+                              date: summaryDateFilter,
+                              netAmount: summaryData.agentReceivables,
+                            });
+                          }}
+                        >
+                          تأكيد التقفيل
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
+                
+                {/* علامة أن اليوم مقفل */}
+                {isDayClosed(summaryDateFilter) && (
+                  <div className="mt-5 flex items-center gap-2 px-3 py-1.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-lg border border-green-300 dark:border-green-700">
+                    <Lock className="h-4 w-4" />
+                    <span className="font-medium">تم التقفيل</span>
+                  </div>
+                )}
               </div>
             </CardHeader>
             <CardContent>

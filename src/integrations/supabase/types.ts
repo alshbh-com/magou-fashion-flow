@@ -111,6 +111,54 @@ export type Database = {
         }
         Relationships: []
       }
+      agent_daily_closings: {
+        Row: {
+          closed_by: string | null
+          closed_by_username: string | null
+          closing_date: string
+          created_at: string | null
+          delivery_agent_id: string
+          id: string
+          net_amount: number
+          notes: string | null
+        }
+        Insert: {
+          closed_by?: string | null
+          closed_by_username?: string | null
+          closing_date: string
+          created_at?: string | null
+          delivery_agent_id: string
+          id?: string
+          net_amount?: number
+          notes?: string | null
+        }
+        Update: {
+          closed_by?: string | null
+          closed_by_username?: string | null
+          closing_date?: string
+          created_at?: string | null
+          delivery_agent_id?: string
+          id?: string
+          net_amount?: number
+          notes?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_daily_closings_closed_by_fkey"
+            columns: ["closed_by"]
+            isOneToOne: false
+            referencedRelation: "admin_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_daily_closings_delivery_agent_id_fkey"
+            columns: ["delivery_agent_id"]
+            isOneToOne: false
+            referencedRelation: "delivery_agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agent_payments: {
         Row: {
           amount: number
