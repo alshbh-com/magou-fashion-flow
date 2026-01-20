@@ -345,8 +345,9 @@ const AgentOrders = () => {
     // صافي المطلوب (حركة اليوم) = المطلوب + التعديلات + المرتجعات(سالبة)
     const netRequired = totalOwed + totalModificationsSigned + totalReturnsSigned;
 
-    // الصافي على المندوب = صافي المطلوب - المسلم - الدفعات المقدمة
-    const agentReceivables = netRequired - totalDelivered - totalPaid;
+    // الصافي المطلوب من المندوب = المسلم - المدفوع
+    // مثال: مسلم 1500 - دفع 1000 = 500 عليه للشركة
+    const agentReceivables = totalDelivered - totalPaid;
 
     // حساب إحصائيات الأوردرات
     const shippedOrders = ordersToUse.filter((o) => o.status === "shipped");
