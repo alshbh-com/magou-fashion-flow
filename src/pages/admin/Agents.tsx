@@ -74,6 +74,7 @@ const Agents = () => {
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       // فك الارتباطات أولًا لتجنب قيود العلاقات ثم احذف المندوب
+      // الأوردرات تبقى في جميع الأوردرات بدون مندوب ولا ترجع لقسم الأوردرات
       const { error: ordersErr } = await supabase
         .from("orders")
         .update({ delivery_agent_id: null })
@@ -92,6 +93,13 @@ const Agents = () => {
         .eq("delivery_agent_id", id);
       if (paymentsErr) throw paymentsErr;
 
+      // حذف التقفيلات اليومية للمندوب
+      const { error: closingsErr } = await supabase
+        .from("agent_daily_closings")
+        .delete()
+        .eq("delivery_agent_id", id);
+      if (closingsErr) throw closingsErr;
+
       const { error } = await supabase
         .from("delivery_agents")
         .delete()
@@ -100,6 +108,7 @@ const Agents = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
+      queryClient.invalidateQueries({ queryKey: ["all-orders"] });
       toast.success("تم حذف المندوب بنجاح");
     },
     onError: (e: any) => {
