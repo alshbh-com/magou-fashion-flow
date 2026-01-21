@@ -348,6 +348,9 @@ const AgentOrders = () => {
     // الصافي على المندوب = صافي المطلوب - المسلم - الدفعات المقدمة
     const agentReceivables = netRequired - totalDelivered - totalPaid;
 
+    // الإجمالي للتقفيل = المسلم - الدفعة المقدمة
+    const closingTotal = totalDelivered - totalPaid;
+
     // حساب إحصائيات الأوردرات
     const shippedOrders = ordersToUse.filter((o) => o.status === "shipped");
     const deliveredOrders = ordersToUse.filter((o) => o.status === "delivered");
@@ -404,6 +407,7 @@ const AgentOrders = () => {
       totalModificationsSigned,
       netRequired,
       agentReceivables,
+      closingTotal,
       shippedCount: shippedOrders.length,
       deliveredCount: deliveredOrders.length,
       returnedCount: returnedOrders.length,
@@ -2254,6 +2258,17 @@ const AgentOrders = () => {
                       </p>
                       <p className="text-xs text-muted-foreground mt-1">
                         بقيمة: {summaryData.shippedTotal.toFixed(2)} ج.م
+                      </p>
+                    </div>
+
+                    {/* الإجمالي للتقفيل */}
+                    <div className="p-4 bg-indigo-50 dark:bg-indigo-950/20 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                      <p className="text-sm text-muted-foreground mb-1">الإجمالي للتقفيل</p>
+                      <p className={`text-2xl font-bold ${summaryData.closingTotal >= 0 ? 'text-indigo-600' : 'text-red-600'}`}>
+                        {summaryData.closingTotal.toFixed(2)} ج.م
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        = المسلم ({summaryData.totalDelivered.toFixed(2)}) - الدفعة المقدمة ({summaryData.totalPaid.toFixed(2)})
                       </p>
                     </div>
                   </div>
