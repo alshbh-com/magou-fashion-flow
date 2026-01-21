@@ -1003,6 +1003,7 @@ export type Database = {
         | "partially_returned"
         | "delivered_with_modification"
         | "return_no_shipping"
+        | "agent_deleted"
       payment_status: "pending" | "partial" | "paid"
     }
     CompositeTypes: {
@@ -1158,6 +1159,7 @@ export const Constants = {
         "partially_returned",
         "delivered_with_modification",
         "return_no_shipping",
+        "agent_deleted",
       ],
       payment_status: ["pending", "partial", "paid"],
     },

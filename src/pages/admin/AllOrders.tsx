@@ -89,7 +89,8 @@ const AllOrders = () => {
       cancelled: "bg-red-500",
       returned: "bg-orange-500",
       delivered_with_modification: "bg-teal-500",
-      return_no_shipping: "bg-orange-400"
+      return_no_shipping: "bg-orange-400",
+      agent_deleted: "bg-gray-600"
     };
     return colors[status] || "bg-gray-500";
   };
@@ -103,7 +104,8 @@ const AllOrders = () => {
       cancelled: "ملغي",
       returned: "مرتجع",
       delivered_with_modification: "تم التوصيل مع التعديل",
-      return_no_shipping: "مرتجع دون شحن"
+      return_no_shipping: "مرتجع دون شحن",
+      agent_deleted: "مندوب محذوف"
     };
     return texts[status] || status;
   };
@@ -396,6 +398,7 @@ const AllOrders = () => {
                     <SelectItem value="cancelled">ملغي</SelectItem>
                     <SelectItem value="returned">مرتجع</SelectItem>
                     <SelectItem value="delivered_with_modification">تم التوصيل مع التعديل</SelectItem>
+                    <SelectItem value="agent_deleted">مندوب محذوف</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

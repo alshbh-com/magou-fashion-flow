@@ -73,11 +73,14 @@ const Agents = () => {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      // فك الارتباطات أولًا لتجنب قيود العلاقات ثم احذف المندوب
-      // الأوردرات تبقى في جميع الأوردرات بدون مندوب ولا ترجع لقسم الأوردرات
+      // تحديث الأوردرات لحالة "مندوب محذوف" وفك الارتباط
+      // الأوردرات تبقى في جميع الأوردرات مع حالة agent_deleted ولا ترجع لقسم الأوردرات
       const { error: ordersErr } = await supabase
         .from("orders")
-        .update({ delivery_agent_id: null })
+        .update({ 
+          delivery_agent_id: null,
+          status: 'agent_deleted' as any
+        })
         .eq("delivery_agent_id", id);
       if (ordersErr) throw ordersErr;
 
