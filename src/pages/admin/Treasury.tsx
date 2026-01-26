@@ -22,6 +22,7 @@ const Treasury = () => {
   
   const [open, setOpen] = useState(false);
   const [dateFilter, setDateFilter] = useState<string>("");
+  const [dateRangeFilter, setDateRangeFilter] = useState<"all" | "30days" | "custom">("all");
   const [formData, setFormData] = useState({
     type: "deposit" as "deposit" | "withdrawal",
     amount: "",
@@ -29,17 +30,27 @@ const Treasury = () => {
     category: ""
   });
 
+  // Helper to get 30 days ago date
+  const get30DaysAgo = () => {
+    const date = new Date();
+    date.setDate(date.getDate() - 30);
+    return date.toISOString().split('T')[0];
+  };
+
   const canEditTreasury = canEdit('treasury');
 
   const { data: transactions, isLoading } = useQuery({
-    queryKey: ["treasury", dateFilter],
+    queryKey: ["treasury", dateFilter, dateRangeFilter],
     queryFn: async () => {
       let query = supabase
         .from("treasury")
         .select("*")
         .order("created_at", { ascending: false });
       
-      if (dateFilter) {
+      if (dateRangeFilter === "30days") {
+        const thirtyDaysAgo = get30DaysAgo();
+        query = query.gte("created_at", `${thirtyDaysAgo}T00:00:00.000Z`);
+      } else if (dateRangeFilter === "custom" && dateFilter) {
         const start = new Date(`${dateFilter}T00:00:00.000Z`);
         const end = new Date(`${dateFilter}T23:59:59.999Z`);
         query = query.gte("created_at", start.toISOString()).lte("created_at", end.toISOString());
@@ -187,17 +198,44 @@ const Treasury = () => {
                 <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded">مشاهدة فقط</span>
               )}
             </CardTitle>
-            <div className="flex gap-2 items-center">
+            <div className="flex gap-2 items-center flex-wrap">
               <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-                <Input
-                  type="date"
-                  value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
-                  className="w-40"
-                />
-                {dateFilter && (
-                  <Button size="sm" variant="ghost" onClick={() => setDateFilter("")}>
+                <Select 
+                  value={dateRangeFilter} 
+                  onValueChange={(v) => {
+                    setDateRangeFilter(v as "all" | "30days" | "custom");
+                    if (v !== "custom") setDateFilter("");
+                  }}
+                >
+                  <SelectTrigger className="w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">كل الأيام</SelectItem>
+                    <SelectItem value="30days">آخر 30 يوم</SelectItem>
+                    <SelectItem value="custom">تاريخ محدد</SelectItem>
+                  </SelectContent>
+                </Select>
+                {dateRangeFilter === "custom" && (
+                  <>
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                    <Input
+                      type="date"
+                      value={dateFilter}
+                      onChange={(e) => setDateFilter(e.target.value)}
+                      className="w-40"
+                    />
+                  </>
+                )}
+                {(dateRangeFilter !== "all") && (
+                  <Button 
+                    size="sm" 
+                    variant="ghost" 
+                    onClick={() => {
+                      setDateRangeFilter("all");
+                      setDateFilter("");
+                    }}
+                  >
                     إلغاء
                   </Button>
                 )}
