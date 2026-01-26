@@ -76,6 +76,7 @@ const AgentOrders = () => {
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState<string>("");
   const [paymentDate, setPaymentDate] = useState<string>(today); // تاريخ الدفعة
+  const [selectedCashboxId, setSelectedCashboxId] = useState<string>(""); // الخزنة المختارة
 
   // إدارة/تعديل/حذف الدفعات لأي يوم
   const [paymentsManagerOpen, setPaymentsManagerOpen] = useState(false);
@@ -282,6 +283,21 @@ const AgentOrders = () => {
     },
   });
 
+  // Query for cashboxes (active only)
+  const { data: cashboxes } = useQuery({
+    queryKey: ["cashboxes-active"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("cashbox")
+        .select("*")
+        .eq("is_active", true)
+        .order("name");
+      
+      if (error) throw error;
+      return data;
+    },
+  });
+
   // Calculate summary data
   const calculateSummary = (dateFilter?: string) => {
     if (!agentPaymentsData || !allAgentOrders) return null;
@@ -397,6 +413,23 @@ const AgentOrders = () => {
 
     const totalProductQuantity = productQuantitiesArray.reduce((sum, p) => sum + p.quantity, 0);
 
+    // حساب عدد القطع المرتجعة لكل منتج (من أوردرات المرتجعات فقط)
+    const returnedProductQuantities: Record<string, number> = {};
+    let totalReturnedItems = 0;
+    returnedOrders.forEach((order: any) => {
+      const orderItems = order.order_items || [];
+      orderItems.forEach((item: any) => {
+        const productName = item.products?.name || "منتج غير معروف";
+        const qty = item.quantity || 0;
+        returnedProductQuantities[productName] = (returnedProductQuantities[productName] || 0) + qty;
+        totalReturnedItems += qty;
+      });
+    });
+
+    const returnedProductQuantitiesArray = Object.entries(returnedProductQuantities)
+      .map(([name, quantity]) => ({ name, quantity }))
+      .sort((a, b) => b.quantity - a.quantity);
+
     return {
       totalOwed,
       totalPaid,
@@ -416,6 +449,8 @@ const AgentOrders = () => {
       returnedTotal,
       productQuantitiesArray,
       totalProductQuantity,
+      returnedProductQuantitiesArray,
+      totalReturnedItems,
     };
   };
 
@@ -470,8 +505,11 @@ const AgentOrders = () => {
 
   // Add payment mutation
   const addPaymentMutation = useMutation({
-    mutationFn: async ({ amount, selectedDate }: { amount: number; selectedDate: string }) => {
+    mutationFn: async ({ amount, selectedDate, cashboxId }: { amount: number; selectedDate: string; cashboxId?: string }) => {
       if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
+
+      const selectedAgent = agents?.find(a => a.id === selectedAgentId);
+      const agentName = selectedAgent?.name || "مندوب";
 
       const { error } = await supabase.from("agent_payments").insert({
         delivery_agent_id: selectedAgentId,
@@ -483,16 +521,30 @@ const AgentOrders = () => {
 
       if (error) throw error;
 
+      // إضافة للخزنة المختارة
+      if (cashboxId) {
+        const { error: cashboxError } = await supabase.from("cashbox_transactions").insert({
+          cashbox_id: cashboxId,
+          amount: amount,
+          type: "income",
+          reason: "دفعة مقدمة من مندوب",
+          description: `دفعة مقدمة من ${agentName} - ${amount.toFixed(2)} ج.م`,
+        });
+        if (cashboxError) throw cashboxError;
+      }
+
       // Keep delivery_agents.total_paid consistent (supports edit/delete later)
       await recalcAgentTotalPaid(selectedAgentId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["agent_payments_full"] });
       queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
+      queryClient.invalidateQueries({ queryKey: ["cashbox_transactions"] });
       toast.success("تم إضافة الدفعة بنجاح");
       setPaymentDialogOpen(false);
       setPaymentAmount("");
       setPaymentDate(today);
+      setSelectedCashboxId("");
     },
     onError: () => {
       toast.error("حدث خطأ أثناء إضافة الدفعة");
@@ -668,7 +720,11 @@ const AgentOrders = () => {
       toast.error("يرجى إدخال مبلغ صحيح");
       return;
     }
-    addPaymentMutation.mutate({ amount, selectedDate: paymentDate });
+    addPaymentMutation.mutate({ 
+      amount, 
+      selectedDate: paymentDate, 
+      cashboxId: selectedCashboxId || undefined 
+    });
   };
 
   const handleEditSummary = () => {
@@ -1881,6 +1937,27 @@ const AgentOrders = () => {
                             </SelectContent>
                           </Select>
                         </div>
+                        <div>
+                          <Label>إضافة للخزنة (اختياري)</Label>
+                          <Select value={selectedCashboxId} onValueChange={setSelectedCashboxId}>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="اختر الخزنة" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">بدون خزنة</SelectItem>
+                              {cashboxes?.map((cashbox: any) => (
+                                <SelectItem key={cashbox.id} value={cashbox.id}>
+                                  {cashbox.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {selectedCashboxId && (
+                            <p className="text-xs text-green-600 mt-1">
+                              سيتم إضافة المبلغ للخزنة المختارة تلقائياً
+                            </p>
+                          )}
+                        </div>
                         <p className="text-sm text-muted-foreground">
                           سيتم إضافة هذه الدفعة ليوم {paymentDate === today ? "اليوم" : paymentDate}
                         </p>
@@ -1891,6 +1968,7 @@ const AgentOrders = () => {
                           onClick={() => {
                             setPaymentDialogOpen(false);
                             setPaymentDate(today);
+                            setSelectedCashboxId("");
                           }}
                         >
                           إلغاء
@@ -2248,6 +2326,9 @@ const AgentOrders = () => {
                       <p className="text-xs text-muted-foreground mt-1">
                         بقيمة: {summaryData.returnedTotal.toFixed(2)} ج.م
                       </p>
+                      <p className="text-xs text-orange-500 mt-1">
+                        ({summaryData.totalReturnedItems} قطعة مرتجعة)
+                      </p>
                     </div>
 
                     {/* أوردرات في الطريق */}
@@ -2299,6 +2380,41 @@ const AgentOrders = () => {
                             </Badge>
                           </div>
                         ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* قسم تفاصيل المرتجعات */}
+                  {summaryData.returnedProductQuantitiesArray && summaryData.returnedProductQuantitiesArray.length > 0 && (
+                    <div className="mt-6 p-4 bg-orange-50 dark:bg-orange-950/20 rounded-lg border border-orange-200 dark:border-orange-800">
+                      <div className="flex items-center gap-2 mb-3">
+                        <PackageX className="h-5 w-5 text-orange-600" />
+                        <h3 className="text-lg font-semibold text-orange-700 dark:text-orange-300">
+                          تفاصيل المرتجعات في يوم {summaryDateFilter}
+                        </h3>
+                        <Badge variant="secondary" className="bg-orange-200 text-orange-800">
+                          {summaryData.totalReturnedItems} قطعة
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                        {summaryData.returnedProductQuantitiesArray.map((product, idx) => (
+                          <div 
+                            key={idx} 
+                            className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 rounded border border-orange-100 dark:border-orange-700"
+                          >
+                            <span className="text-sm font-medium truncate flex-1 ml-2">
+                              {product.name}
+                            </span>
+                            <Badge className="bg-orange-600 text-white">
+                              {product.quantity}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-3 pt-3 border-t border-orange-200 dark:border-orange-700">
+                        <p className="text-sm text-orange-700 dark:text-orange-300">
+                          إجمالي قيمة المرتجعات: <span className="font-bold">{summaryData.returnedTotal.toFixed(2)} ج.م</span>
+                        </p>
                       </div>
                     </div>
                   )}
