@@ -523,12 +523,17 @@ const AgentOrders = () => {
 
       // إضافة للخزنة المختارة
       if (cashboxId) {
+        const userDataStr = localStorage.getItem("adminUser");
+        const userData = userDataStr ? JSON.parse(userDataStr) : null;
+        
         const { error: cashboxError } = await supabase.from("cashbox_transactions").insert({
           cashbox_id: cashboxId,
           amount: amount,
           type: "income",
           reason: "دفعة مقدمة من مندوب",
           description: `دفعة مقدمة من ${agentName} - ${amount.toFixed(2)} ج.م`,
+          user_id: userData?.id || null,
+          username: userData?.username || "غير معروف",
         });
         if (cashboxError) throw cashboxError;
       }
