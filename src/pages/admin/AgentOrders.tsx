@@ -1939,12 +1939,12 @@ const AgentOrders = () => {
                         </div>
                         <div>
                           <Label>إضافة للخزنة (اختياري)</Label>
-                          <Select value={selectedCashboxId} onValueChange={setSelectedCashboxId}>
+                          <Select value={selectedCashboxId || "none"} onValueChange={(v) => setSelectedCashboxId(v === "none" ? "" : v)}>
                             <SelectTrigger className="w-full">
                               <SelectValue placeholder="اختر الخزنة" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">بدون خزنة</SelectItem>
+                              <SelectItem value="none">بدون خزنة</SelectItem>
                               {cashboxes?.map((cashbox: any) => (
                                 <SelectItem key={cashbox.id} value={cashbox.id}>
                                   {cashbox.name}
