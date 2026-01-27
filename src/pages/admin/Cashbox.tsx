@@ -30,7 +30,7 @@ const ADMIN_PASSWORD = "Magdi17121997";
 const Cashbox = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { canEdit, currentUser, logActivity } = useAdminAuth();
+  const { canEdit, canView, currentUser, logActivity } = useAdminAuth();
   
   const [addTransactionOpen, setAddTransactionOpen] = useState(false);
   const [createCashboxOpen, setCreateCashboxOpen] = useState(false);
@@ -54,7 +54,9 @@ const Cashbox = () => {
     opening_balance: ""
   });
 
-  const canEditCashbox = canEdit('cashbox') || canEdit('treasury');
+  const canManageCashbox = canEdit('cashbox') || canEdit('treasury');
+  // المطلوب: مستخدم "مشاهدة" للخزنة يقدر ينشئ خزنة جديدة فقط
+  const canCreateCashbox = canManageCashbox || canView('treasury') || canView('cashbox');
 
   // Fetch all cashboxes
   const { data: cashboxes, isLoading: loadingCashboxes } = useQuery({
@@ -311,9 +313,14 @@ const Cashbox = () => {
               <Wallet className="h-5 w-5" />
               الخزنات
             </CardTitle>
-            {canEditCashbox && (
+            {canCreateCashbox && (
               <>
-                <Button onClick={() => openWithPassword("cashbox")}>
+                <Button
+                  onClick={() => {
+                    if (canManageCashbox) return openWithPassword("cashbox");
+                    setCreateCashboxOpen(true);
+                  }}
+                >
                   <Plus className="ml-2 h-4 w-4" />
                   إنشاء خزنة
                 </Button>
@@ -364,7 +371,7 @@ const Cashbox = () => {
                       <Wallet className="h-4 w-4" />
                       {cashbox.name}
                     </Button>
-                    {canEditCashbox && (
+                    {canManageCashbox && (
                       <Button
                         size="icon"
                         variant="ghost"
@@ -441,7 +448,7 @@ const Cashbox = () => {
                 <CardTitle className="flex items-center gap-2">
                   <FileText className="h-5 w-5" />
                   حركات الخزنة: {cashboxBalance.name}
-                  {!canEditCashbox && (
+                  {!canManageCashbox && (
                     <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded">مشاهدة فقط</span>
                   )}
                 </CardTitle>
@@ -484,7 +491,7 @@ const Cashbox = () => {
                     </Button>
                   )}
 
-                  {canEditCashbox && (
+                  {canManageCashbox && (
                     <>
                       <Button onClick={() => openWithPassword("transaction")}>
                         <Plus className="ml-2 h-4 w-4" />
