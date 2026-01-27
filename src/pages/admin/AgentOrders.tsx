@@ -17,6 +17,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import * as XLSX from 'xlsx';
 import { useActivityLogger } from "@/hooks/useActivityLogger";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 
 const statusLabels: Record<string, string> = {
   shipped: "تم الشحن",
@@ -36,6 +37,7 @@ const AgentOrders = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { logAction } = useActivityLogger();
+  const { currentUser } = useAdminAuth();
   const summaryRef = useRef<HTMLDivElement>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -247,6 +249,24 @@ const AgentOrders = () => {
     enabled: !!selectedAgentId
   });
 
+  // Returns table (for accurate returns summary even if orders.delivery_agent_id becomes NULL)
+  const { data: agentReturns } = useQuery({
+    queryKey: ["agent-returns", selectedAgentId],
+    queryFn: async () => {
+      if (!selectedAgentId) return [];
+
+      const { data, error } = await supabase
+        .from("returns")
+        .select("id, order_id, return_amount, returned_items, created_at, orders(assigned_at)")
+        .eq("delivery_agent_id", selectedAgentId)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!selectedAgentId,
+  });
+
   // Query for daily closings
   const { data: dailyClosings, refetch: refetchClosings } = useQuery({
     queryKey: ["agent_daily_closings", selectedAgentId],
@@ -370,9 +390,19 @@ const AgentOrders = () => {
     // حساب إحصائيات الأوردرات
     const shippedOrders = ordersToUse.filter((o) => o.status === "shipped");
     const deliveredOrders = ordersToUse.filter((o) => o.status === "delivered");
-    const returnedOrders = ordersToUse.filter((o) =>
-      ["returned", "return_no_shipping", "partially_returned"].includes(o.status || "")
+
+    // Returns should be derived from `returns` table (orders may be unassigned from agent on status changes)
+    const returnsToUse = (agentReturns || []).filter((r: any) => {
+      if (!dateFilter) return true;
+      const assignedAt = r?.orders?.assigned_at;
+      const accountingDate = getDateKey(assignedAt || r.created_at || "");
+      return accountingDate === dateFilter;
+    });
+
+    const returnedOrderIds = new Set(
+      returnsToUse.map((r: any) => r.order_id).filter(Boolean)
     );
+    const returnedCount = returnedOrderIds.size;
 
     const shippedTotal = shippedOrders.reduce((sum, o) => {
       const total = parseFloat(o.total_amount?.toString() || "0");
@@ -388,11 +418,9 @@ const AgentOrders = () => {
       return sum + total + shipping - agentShipping;
     }, 0);
 
-    const returnedTotal = returnedOrders.reduce((sum, o) => {
-      const total = parseFloat(o.total_amount?.toString() || "0");
-      const shipping = parseFloat(o.shipping_cost?.toString() || "0");
-      const agentShipping = parseFloat(o.agent_shipping_cost?.toString() || "0");
-      return sum + total + shipping - agentShipping;
+    const returnedTotal = returnsToUse.reduce((sum: number, r: any) => {
+      const amt = parseFloat((r?.return_amount ?? 0).toString());
+      return sum + (Number.isFinite(amt) ? amt : 0);
     }, 0);
 
     // حساب عدد القطع لكل منتج (من جميع أوردرات اليوم)
@@ -416,12 +444,13 @@ const AgentOrders = () => {
     // حساب عدد القطع المرتجعة لكل منتج (من أوردرات المرتجعات فقط)
     const returnedProductQuantities: Record<string, number> = {};
     let totalReturnedItems = 0;
-    returnedOrders.forEach((order: any) => {
-      const orderItems = order.order_items || [];
-      orderItems.forEach((item: any) => {
-        const productName = item.products?.name || "منتج غير معروف";
-        const qty = item.quantity || 0;
-        returnedProductQuantities[productName] = (returnedProductQuantities[productName] || 0) + qty;
+    (returnsToUse || []).forEach((ret: any) => {
+      const items = Array.isArray(ret?.returned_items) ? ret.returned_items : [];
+      items.forEach((it: any) => {
+        const name = it?.product_name || "منتج غير معروف";
+        const qtyRaw = it?.returned_quantity ?? it?.quantity ?? 0;
+        const qty = parseFloat(qtyRaw.toString()) || 0;
+        returnedProductQuantities[name] = (returnedProductQuantities[name] || 0) + qty;
         totalReturnedItems += qty;
       });
     });
@@ -443,7 +472,7 @@ const AgentOrders = () => {
       closingTotal,
       shippedCount: shippedOrders.length,
       deliveredCount: deliveredOrders.length,
-      returnedCount: returnedOrders.length,
+      returnedCount,
       shippedTotal,
       deliveredTotal,
       returnedTotal,
@@ -505,54 +534,80 @@ const AgentOrders = () => {
 
   // Add payment mutation
   const addPaymentMutation = useMutation({
-    mutationFn: async ({ amount, selectedDate, cashboxId }: { amount: number; selectedDate: string; cashboxId?: string }) => {
+    mutationFn: async ({
+      amount,
+      selectedDate,
+      cashboxId,
+    }: {
+      amount: number;
+      selectedDate: string;
+      cashboxId: string;
+    }) => {
       if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
+      if (!cashboxId) throw new Error("يرجى اختيار خزنة");
 
       const selectedAgent = agents?.find(a => a.id === selectedAgentId);
       const agentName = selectedAgent?.name || "مندوب";
 
-      const { error } = await supabase.from("agent_payments").insert({
-        delivery_agent_id: selectedAgentId,
-        amount,
-        payment_type: "payment",
-        payment_date: selectedDate,
-        notes: `دفعة مقدمة - ${amount.toFixed(2)} ج.م (${selectedDate})`,
-      });
+      let insertedPaymentId: string | null = null;
+      try {
+        // 1) Create the advance payment record (agent ledger)
+        const { data: paymentRow, error: paymentError } = await supabase
+          .from("agent_payments")
+          .insert({
+            delivery_agent_id: selectedAgentId,
+            amount,
+            payment_type: "payment",
+            payment_date: selectedDate,
+            notes: `دفعة مقدمة - ${amount.toFixed(2)} ج.م (${selectedDate})`,
+          })
+          .select("id")
+          .single();
 
-      if (error) throw error;
+        if (paymentError) throw paymentError;
+        insertedPaymentId = paymentRow?.id || null;
 
-      // إضافة للخزنة المختارة
-      if (cashboxId) {
-        const userDataStr = localStorage.getItem("adminUser");
-        const userData = userDataStr ? JSON.parse(userDataStr) : null;
-        
-        const { error: cashboxError } = await supabase.from("cashbox_transactions").insert({
-          cashbox_id: cashboxId,
-          amount: amount,
-          type: "income",
-          reason: "دفعة مقدمة من مندوب",
-          description: `دفعة مقدمة من ${agentName} - ${amount.toFixed(2)} ج.م`,
-          user_id: userData?.id || null,
-          username: userData?.username || "غير معروف",
-        });
+        // 2) Create the cashbox deposit (income)
+        const { error: cashboxError } = await supabase
+          .from("cashbox_transactions")
+          .insert({
+            cashbox_id: cashboxId,
+            amount,
+            type: "income",
+            reason: "manual",
+            description: `إيداع (دفعة مقدمة) من ${agentName} - ${amount.toFixed(2)} ج.م • بواسطة ${currentUser?.username || "غير معروف"}`,
+            user_id: currentUser?.id || null,
+            username: currentUser?.username || "غير معروف",
+          });
+
         if (cashboxError) throw cashboxError;
-      }
 
-      // Keep delivery_agents.total_paid consistent (supports edit/delete later)
-      await recalcAgentTotalPaid(selectedAgentId);
+        // Keep delivery_agents.total_paid consistent (supports edit/delete later)
+        await recalcAgentTotalPaid(selectedAgentId);
+      } catch (e) {
+        // Best-effort rollback: if cashbox insert fails, remove the agent payment
+        if (insertedPaymentId) {
+          await supabase.from("agent_payments").delete().eq("id", insertedPaymentId);
+        }
+        throw e;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["agent_payments_full"] });
       queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
-      queryClient.invalidateQueries({ queryKey: ["cashbox_transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["cashbox-transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["cashbox-balance"] });
+      queryClient.invalidateQueries({ queryKey: ["cashboxes-active"] });
       toast.success("تم إضافة الدفعة بنجاح");
       setPaymentDialogOpen(false);
       setPaymentAmount("");
       setPaymentDate(today);
       setSelectedCashboxId("");
     },
-    onError: () => {
-      toast.error("حدث خطأ أثناء إضافة الدفعة");
+    onError: (error: any) => {
+      console.error("Add payment error:", error);
+      const msg = error?.message ? `حدث خطأ أثناء إضافة الدفعة: ${error.message}` : "حدث خطأ أثناء إضافة الدفعة";
+      toast.error(msg);
     },
   });
 
@@ -725,10 +780,14 @@ const AgentOrders = () => {
       toast.error("يرجى إدخال مبلغ صحيح");
       return;
     }
+    if (!selectedCashboxId) {
+      toast.error("يرجى اختيار خزنة لإضافة الدفعة");
+      return;
+    }
     addPaymentMutation.mutate({ 
       amount, 
       selectedDate: paymentDate, 
-      cashboxId: selectedCashboxId || undefined 
+      cashboxId: selectedCashboxId
     });
   };
 
@@ -992,6 +1051,9 @@ const AgentOrders = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["returns"] });
+      queryClient.invalidateQueries({ queryKey: ["agent-returns", selectedAgentId] });
+      queryClient.invalidateQueries({ queryKey: ["agent_payments_full", selectedAgentId] });
+      queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
       toast.success("تم تسجيل المرتجع بنجاح");
       setReturnDialogOpen(false);
       setSelectedOrderForReturn(null);
@@ -1943,13 +2005,12 @@ const AgentOrders = () => {
                           </Select>
                         </div>
                         <div>
-                          <Label>إضافة للخزنة (اختياري)</Label>
-                          <Select value={selectedCashboxId || "none"} onValueChange={(v) => setSelectedCashboxId(v === "none" ? "" : v)}>
+                          <Label>الخزنة (إجباري)</Label>
+                          <Select value={selectedCashboxId} onValueChange={setSelectedCashboxId}>
                             <SelectTrigger className="w-full">
                               <SelectValue placeholder="اختر الخزنة" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="none">بدون خزنة</SelectItem>
                               {cashboxes?.map((cashbox: any) => (
                                 <SelectItem key={cashbox.id} value={cashbox.id}>
                                   {cashbox.name}
@@ -1957,11 +2018,9 @@ const AgentOrders = () => {
                               ))}
                             </SelectContent>
                           </Select>
-                          {selectedCashboxId && (
-                            <p className="text-xs text-green-600 mt-1">
-                              سيتم إضافة المبلغ للخزنة المختارة تلقائياً
-                            </p>
-                          )}
+                          <p className="text-xs text-muted-foreground mt-1">
+                            سيتم تسجيل المبلغ كـ <span className="font-medium">إيداع</span> داخل الخزنة المختارة مع اسم المستخدم.
+                          </p>
                         </div>
                         <p className="text-sm text-muted-foreground">
                           سيتم إضافة هذه الدفعة ليوم {paymentDate === today ? "اليوم" : paymentDate}
