@@ -852,7 +852,7 @@ const AgentOrders = () => {
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ id, status, removeShipping }: { id: string; status: string; removeShipping?: boolean }) => {
+    mutationFn: async ({ id, status, removeShipping, skipAutoReturnUpsert }: { id: string; status: string; removeShipping?: boolean; skipAutoReturnUpsert?: boolean }) => {
       const order = orders?.find(o => o.id === id);
       if (!order) throw new Error("Order not found");
 
@@ -863,12 +863,71 @@ const AgentOrders = () => {
       const agentShipping = parseFloat(order.agent_shipping_cost?.toString() || "0");
       const orderTotal = totalAmount + customerShipping;
       
-      // إذا كانت الحالة "مرتجع" أو "مرتجع دون شحن":
-      // لا نُحدّث total_owed ولا نُضيف agent_payments من الواجهة هنا، لأن ذلك يتم تلقائياً
-      // عبر Triggers قاعدة البيانات (لتجنب تكرار الحسابات ×2).
-      if (status === "return_no_shipping") {
-        // إلغاء تعيين المندوب (سيذهب الأوردر لجميع الأوردرات)
-        updates.delivery_agent_id = null;
+      // ملاحظة: لا نفك تعيين المندوب عند المرتجع حتى يظل اسم المندوب ظاهر تاريخياً في "جميع الأوردرات".
+      // (الأوردر يختفي من صفحة المندوب تلقائياً لأن الاستعلام يستبعد حالات المرتجع)
+
+      // إذا تم تغيير الحالة إلى مرتجع مباشرة (بدون فتح نافذة تسجيل المرتجع)
+      // أنشئ/حدّث سجل في جدول returns حتى يظهر في ملخص المرتجعات.
+      if (!skipAutoReturnUpsert && (status === "returned" || status === "return_no_shipping")) {
+        const returnItems = (order.order_items || []).map((item: any) => {
+          const productName =
+            item?.products?.name ||
+            (() => {
+              try {
+                const d = item?.product_details ? JSON.parse(item.product_details) : null;
+                return d?.name || d?.product_name;
+              } catch {
+                return null;
+              }
+            })() ||
+            "منتج غير معروف";
+
+          const qty = parseFloat((item?.quantity ?? 0).toString()) || 0;
+          const price = parseFloat((item?.price ?? 0).toString()) || 0;
+
+          return {
+            product_id: item?.product_id ?? null,
+            product_name: productName,
+            quantity: qty,
+            price,
+          };
+        });
+
+        const returnAmount = returnItems.reduce(
+          (sum: number, it: any) => sum + (parseFloat((it.quantity ?? 0).toString()) || 0) * (parseFloat((it.price ?? 0).toString()) || 0),
+          0
+        );
+
+        // Upsert by order_id
+        const { data: existingReturn, error: existingErr } = await supabase
+          .from("returns")
+          .select("id")
+          .eq("order_id", id)
+          .maybeSingle();
+        if (existingErr) throw existingErr;
+
+        if (existingReturn?.id) {
+          const { error: updErr } = await supabase
+            .from("returns")
+            .update({
+              customer_id: order.customer_id,
+              delivery_agent_id: order.delivery_agent_id,
+              return_amount: returnAmount,
+              returned_items: returnItems as any,
+            })
+            .eq("id", existingReturn.id);
+          if (updErr) throw updErr;
+        } else {
+          const { error: insErr } = await supabase.from("returns").insert({
+            order_id: id,
+            customer_id: order.customer_id,
+            delivery_agent_id: order.delivery_agent_id,
+            return_amount: returnAmount,
+            returned_items: returnItems as any,
+            notes: "مرتجع كامل",
+          });
+          if (insErr) throw insErr;
+        }
       }
 
       const { error } = await supabase
@@ -883,6 +942,8 @@ const AgentOrders = () => {
       queryClient.invalidateQueries({ queryKey: ["agent-orders"] });
       queryClient.invalidateQueries({ queryKey: ["agent_payments"] });
       queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
+      queryClient.invalidateQueries({ queryKey: ["returns"] });
+      queryClient.invalidateQueries({ queryKey: ["agent-returns"] });
       queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
       queryClient.invalidateQueries({ queryKey: ["all-orders"] });
       toast.success("تم تحديث الحالة");
@@ -1050,18 +1111,39 @@ const AgentOrders = () => {
 
   const createReturnMutation = useMutation({
     mutationFn: async (data: any) => {
-      const { error } = await supabase
+      // Upsert by order_id to avoid duplicates affecting summary totals
+      const { data: existingReturn, error: existingErr } = await supabase
         .from("returns")
-        .insert({
-          order_id: data.order_id,
-          customer_id: data.customer_id,
-          delivery_agent_id: data.delivery_agent_id,
-          return_amount: data.return_amount,
-          returned_items: data.returned_items,
-          notes: data.notes
-        });
-      
-      if (error) throw error;
+        .select("id")
+        .eq("order_id", data.order_id)
+        .maybeSingle();
+      if (existingErr) throw existingErr;
+
+      if (existingReturn?.id) {
+        const { error } = await supabase
+          .from("returns")
+          .update({
+            customer_id: data.customer_id,
+            delivery_agent_id: data.delivery_agent_id,
+            return_amount: data.return_amount,
+            returned_items: data.returned_items,
+            notes: data.notes,
+          })
+          .eq("id", existingReturn.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("returns")
+          .insert({
+            order_id: data.order_id,
+            customer_id: data.customer_id,
+            delivery_agent_id: data.delivery_agent_id,
+            return_amount: data.return_amount,
+            returned_items: data.returned_items,
+            notes: data.notes,
+          });
+        if (error) throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["returns"] });
@@ -1303,7 +1385,8 @@ const AgentOrders = () => {
     await updateStatusMutation.mutateAsync({
       id: selectedOrderForReturn.id,
       status: newStatus,
-      removeShipping: returnData.removeShipping
+      removeShipping: returnData.removeShipping,
+      skipAutoReturnUpsert: true,
     });
 
     // Create return record

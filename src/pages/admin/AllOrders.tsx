@@ -117,6 +117,70 @@ const AllOrders = () => {
     }) => {
       // Get the order first
       const order = orders?.find(o => o.id === orderId);
+
+      // Helper: ensure a returns row exists when we mark an order as returned
+      const upsertReturnsForFullReturn = async () => {
+        if (!order) return;
+
+        const returnItems = (order.order_items || []).map((item: any) => {
+          const productName =
+            item?.products?.name ||
+            (() => {
+              try {
+                const d = item?.product_details ? JSON.parse(item.product_details) : null;
+                return d?.name || d?.product_name;
+              } catch {
+                return null;
+              }
+            })() ||
+            "منتج غير معروف";
+
+          const qty = parseFloat((item?.quantity ?? 0).toString()) || 0;
+          const price = parseFloat((item?.price ?? 0).toString()) || 0;
+          return {
+            product_id: item?.product_id ?? null,
+            product_name: productName,
+            quantity: qty,
+            price,
+          };
+        });
+
+        const returnAmount = returnItems.reduce(
+          (sum: number, it: any) => sum + (parseFloat((it.quantity ?? 0).toString()) || 0) * (parseFloat((it.price ?? 0).toString()) || 0),
+          0
+        );
+
+        const { data: existingReturn, error: existingErr } = await supabase
+          .from("returns")
+          .select("id")
+          .eq("order_id", orderId)
+          .maybeSingle();
+        if (existingErr) throw existingErr;
+
+        if (existingReturn?.id) {
+          const { error: updErr } = await supabase
+            .from("returns")
+            .update({
+              customer_id: order.customer_id,
+              delivery_agent_id: order.delivery_agent_id,
+              return_amount: returnAmount,
+              returned_items: returnItems as any,
+              notes: "مرتجع كامل",
+            })
+            .eq("id", existingReturn.id);
+          if (updErr) throw updErr;
+        } else {
+          const { error: insErr } = await supabase.from("returns").insert({
+            order_id: orderId,
+            customer_id: order.customer_id,
+            delivery_agent_id: order.delivery_agent_id,
+            return_amount: returnAmount,
+            returned_items: returnItems as any,
+            notes: "مرتجع كامل",
+          });
+          if (insErr) throw insErr;
+        }
+      };
       
       // If changing to "returned" and there's a delivery agent, handle payment logic
       if (newStatus === "returned" && order?.delivery_agent_id) {
@@ -170,6 +234,11 @@ const AllOrders = () => {
           }
         }
       }
+
+      // IMPORTANT: Create/Update a row in `returns` so Agent summary can count it.
+      if (newStatus === "returned") {
+        await upsertReturnsForFullReturn();
+      }
       
       const { error } = await supabase
         .from("orders")
@@ -185,6 +254,8 @@ const AllOrders = () => {
       queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
       queryClient.invalidateQueries({ queryKey: ["agent_payments"] });
       queryClient.invalidateQueries({ queryKey: ["agent_payments_summary"] });
+      queryClient.invalidateQueries({ queryKey: ["returns"] });
+      queryClient.invalidateQueries({ queryKey: ["agent-returns"] });
       toast.success("تم تحديث حالة الأوردر بنجاح");
       setEditingStatus(null);
     },
