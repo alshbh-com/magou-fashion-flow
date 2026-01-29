@@ -441,17 +441,31 @@ const AgentOrders = () => {
 
     const totalProductQuantity = productQuantitiesArray.reduce((sum, p) => sum + p.quantity, 0);
 
-    // حساب عدد القطع المرتجعة لكل منتج (من أوردرات المرتجعات فقط)
+    // حساب عدد القطع المرتجعة لكل منتج (من جدول returns مباشرة)
     const returnedProductQuantities: Record<string, number> = {};
     let totalReturnedItems = 0;
     (returnsToUse || []).forEach((ret: any) => {
-      const items = Array.isArray(ret?.returned_items) ? ret.returned_items : [];
+      // Parse returned_items if it's a string (JSON)
+      let items: any[] = [];
+      if (typeof ret?.returned_items === 'string') {
+        try {
+          items = JSON.parse(ret.returned_items);
+        } catch {
+          items = [];
+        }
+      } else if (Array.isArray(ret?.returned_items)) {
+        items = ret.returned_items;
+      }
+      
       items.forEach((it: any) => {
-        const name = it?.product_name || "منتج غير معروف";
-        const qtyRaw = it?.returned_quantity ?? it?.quantity ?? 0;
+        // The data is stored as { product_name, quantity, ... }
+        const name = it?.product_name || it?.name || "منتج غير معروف";
+        const qtyRaw = it?.quantity ?? it?.returned_quantity ?? 0;
         const qty = parseFloat(qtyRaw.toString()) || 0;
-        returnedProductQuantities[name] = (returnedProductQuantities[name] || 0) + qty;
-        totalReturnedItems += qty;
+        if (qty > 0) {
+          returnedProductQuantities[name] = (returnedProductQuantities[name] || 0) + qty;
+          totalReturnedItems += qty;
+        }
       });
     });
 
