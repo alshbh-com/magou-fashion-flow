@@ -12,7 +12,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ArrowLeft, PackageX, Printer, Download, AlertTriangle, Trash2, MessageCircle, ArrowDown, Plus, Edit2, ChevronDown, ChevronUp, Calendar, Package, Check, Lock } from "lucide-react";
+import { ArrowLeft, PackageX, Printer, Download, AlertTriangle, Trash2, MessageCircle, ArrowDown, Plus, Edit2, ChevronDown, ChevronUp, Calendar as CalendarIcon, Package, Check, Lock } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { format } from "date-fns";
+import { ar } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import * as XLSX from 'xlsx';
@@ -23,14 +27,16 @@ const statusLabels: Record<string, string> = {
   shipped: "تم الشحن",
   delivered: "تم التوصيل",
   returned: "مرتجع",
-  return_no_shipping: "مرتجع دون شحن"
+  return_no_shipping: "مرتجع دون شحن",
+  reschedule: "نزول"
 };
 
 const statusColors: Record<string, string> = {
   shipped: "bg-purple-500",
   delivered: "bg-green-500",
   returned: "bg-orange-600",
-  return_no_shipping: "bg-red-500"
+  return_no_shipping: "bg-red-500",
+  reschedule: "bg-blue-500"
 };
 
 const AgentOrders = () => {
@@ -88,6 +94,11 @@ const AgentOrders = () => {
 
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState<string>("");
+
+  // Reschedule (نزول) dialog state
+  const [rescheduleDialogOpen, setRescheduleDialogOpen] = useState(false);
+  const [rescheduleOrder, setRescheduleOrder] = useState<any>(null);
+  const [rescheduleDate, setRescheduleDate] = useState<Date | undefined>(undefined);
 
   // Generate last 10 days for payment date selection
   const generatePaymentDateOptions = () => {
@@ -785,6 +796,65 @@ const AgentOrders = () => {
       } else {
         toast.error("حدث خطأ أثناء التقفيل");
       }
+    },
+  });
+
+  // Reschedule (نزول) mutation - move order to a different date
+  const rescheduleMutation = useMutation({
+    mutationFn: async ({ orderId, newDate }: { orderId: string; newDate: Date }) => {
+      const order = orders?.find(o => o.id === orderId);
+      if (!order) throw new Error("Order not found");
+
+      const newAssignedAt = new Date(newDate);
+      // Set to start of day in Cairo timezone for consistency
+      newAssignedAt.setHours(12, 0, 0, 0);
+
+      const orderAmount = parseFloat(order.total_amount?.toString() || "0") 
+        + parseFloat(order.shipping_cost?.toString() || "0") 
+        - parseFloat(order.agent_shipping_cost?.toString() || "0");
+
+      const oldDateKey = getDateKey((order as any).assigned_at || order.updated_at || order.created_at);
+      const newDateKey = getDateKey(newDate);
+
+      // 1. Update the order's assigned_at to the new date
+      const { error: updateError } = await supabase
+        .from("orders")
+        .update({ assigned_at: newAssignedAt.toISOString() })
+        .eq("id", orderId);
+
+      if (updateError) throw updateError;
+
+      // 2. Update all related agent_payments for this order to use the new date
+      const { error: paymentsError } = await supabase
+        .from("agent_payments")
+        .update({ payment_date: newDateKey })
+        .eq("order_id", orderId)
+        .eq("delivery_agent_id", order.delivery_agent_id);
+
+      if (paymentsError) throw paymentsError;
+
+      // Log the activity
+      await logAction("نزول أوردر", "orders", {
+        order_id: orderId,
+        order_number: order.order_number,
+        old_date: oldDateKey,
+        new_date: newDateKey,
+        amount: orderAmount,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agent-orders", selectedAgentId] });
+      queryClient.invalidateQueries({ queryKey: ["all-agent-orders", selectedAgentId] });
+      queryClient.invalidateQueries({ queryKey: ["agent_payments_full", selectedAgentId] });
+      queryClient.invalidateQueries({ queryKey: ["delivery_agents"] });
+      toast.success("تم نقل الأوردر بنجاح");
+      setRescheduleDialogOpen(false);
+      setRescheduleOrder(null);
+      setRescheduleDate(undefined);
+    },
+    onError: (error: any) => {
+      console.error("Reschedule error:", error);
+      toast.error("حدث خطأ أثناء نقل الأوردر");
     },
   });
 
@@ -2013,6 +2083,22 @@ const AgentOrders = () => {
                                  </AlertDialogFooter>
                                </AlertDialogContent>
                              </AlertDialog>
+                             {/* Reschedule (نزول) Button */}
+                             <Button
+                               variant="outline"
+                               size="sm"
+                               className="bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-300"
+                               onClick={() => {
+                                 setRescheduleOrder(order);
+                                 // Default to order's assigned date
+                                 const assignedAt = (order as any).assigned_at || order.updated_at || order.created_at;
+                                 setRescheduleDate(new Date(assignedAt));
+                                 setRescheduleDialogOpen(true);
+                               }}
+                             >
+                               <ArrowDown className="ml-1 h-4 w-4" />
+                               نزول
+                             </Button>
                            </div>
                          </TableCell>
                       </TableRow>
@@ -2734,6 +2820,92 @@ const AgentOrders = () => {
                 <Button onClick={handleSubmitReturn} className="w-full">
                   تأكيد المرتجع
                 </Button>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Reschedule (نزول) Dialog */}
+        <Dialog open={rescheduleDialogOpen} onOpenChange={setRescheduleDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>نزول الأوردر لتاريخ آخر</DialogTitle>
+            </DialogHeader>
+            {rescheduleOrder && (
+              <div className="space-y-4 py-4">
+                <div className="p-4 bg-accent rounded-lg">
+                  <p><strong>رقم الأوردر:</strong> #{rescheduleOrder.order_number || rescheduleOrder.id.slice(0, 8)}</p>
+                  <p><strong>العميل:</strong> {rescheduleOrder.customers?.name || "غير معروف"}</p>
+                  <p><strong>المبلغ:</strong> {(
+                    parseFloat(rescheduleOrder.total_amount?.toString() || "0") +
+                    parseFloat(rescheduleOrder.shipping_cost?.toString() || "0") -
+                    parseFloat(rescheduleOrder.agent_shipping_cost?.toString() || "0")
+                  ).toFixed(2)} ج.م</p>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    <strong>التاريخ الحالي:</strong> {getDateKey((rescheduleOrder as any).assigned_at || rescheduleOrder.updated_at || rescheduleOrder.created_at)}
+                  </p>
+                </div>
+
+                <div>
+                  <Label className="mb-2 block">اختر التاريخ الجديد</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="w-full justify-start text-right"
+                      >
+                        <CalendarIcon className="ml-2 h-4 w-4" />
+                        {rescheduleDate ? format(rescheduleDate, "PPP", { locale: ar }) : "اختر التاريخ"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={rescheduleDate}
+                        onSelect={setRescheduleDate}
+                        disabled={(date) => {
+                          const orderAssignedAt = new Date((rescheduleOrder as any).assigned_at || rescheduleOrder.created_at);
+                          orderAssignedAt.setHours(0, 0, 0, 0);
+                          const todayDate = new Date();
+                          todayDate.setHours(23, 59, 59, 999);
+                          return date < orderAssignedAt || date > todayDate;
+                        }}
+                        initialFocus
+                        className="pointer-events-auto"
+                        locale={ar}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => {
+                      if (!rescheduleDate) {
+                        toast.error("يرجى اختيار تاريخ");
+                        return;
+                      }
+                      rescheduleMutation.mutate({
+                        orderId: rescheduleOrder.id,
+                        newDate: rescheduleDate,
+                      });
+                    }}
+                    disabled={rescheduleMutation.isPending}
+                    className="flex-1"
+                  >
+                    {rescheduleMutation.isPending ? "جاري النقل..." : "نقل الأوردر"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setRescheduleDialogOpen(false);
+                      setRescheduleOrder(null);
+                      setRescheduleDate(undefined);
+                    }}
+                  >
+                    إلغاء
+                  </Button>
+                </div>
               </div>
             )}
           </DialogContent>
