@@ -16,7 +16,6 @@ import { ArrowLeft, PackageX, Printer, Download, AlertTriangle, Trash2, MessageC
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { format } from "date-fns";
-import { ar } from "date-fns/locale";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import * as XLSX from 'xlsx';
@@ -2855,7 +2854,7 @@ const AgentOrders = () => {
                         className="w-full justify-start text-right"
                       >
                         <CalendarIcon className="ml-2 h-4 w-4" />
-                        {rescheduleDate ? format(rescheduleDate, "PPP", { locale: ar }) : "اختر التاريخ"}
+                        {rescheduleDate ? format(rescheduleDate, "yyyy-MM-dd") : "اختر التاريخ"}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0" align="start">
@@ -2872,7 +2871,6 @@ const AgentOrders = () => {
                         }}
                         initialFocus
                         className="pointer-events-auto"
-                        locale={ar}
                       />
                     </PopoverContent>
                   </Popover>
