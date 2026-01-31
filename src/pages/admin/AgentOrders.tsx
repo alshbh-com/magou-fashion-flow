@@ -869,7 +869,7 @@ const AgentOrders = () => {
     }
     addPaymentMutation.mutate({ 
       amount, 
-      selectedDate: summaryDateFilter, 
+      selectedDate: paymentDate, 
       cashboxId: selectedCashboxId
     });
   };
@@ -2172,6 +2172,21 @@ const AgentOrders = () => {
                           />
                         </div>
                         <div>
+                          <Label>إضافة الدفعة ليوم</Label>
+                          <Select value={paymentDate} onValueChange={setPaymentDate}>
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="اختر التاريخ" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {paymentDateOptions.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
                           <Label>الخزنة (إجباري)</Label>
                           <Select value={selectedCashboxId} onValueChange={setSelectedCashboxId}>
                             <SelectTrigger className="w-full">
@@ -2190,7 +2205,7 @@ const AgentOrders = () => {
                           </p>
                         </div>
                         <p className="text-sm text-muted-foreground">
-                          سيتم إضافة هذه الدفعة ليوم {new Date(summaryDateFilter).toLocaleDateString('ar-EG')}
+                          سيتم إضافة هذه الدفعة ليوم {paymentDate === today ? "اليوم" : paymentDate}
                         </p>
                       </div>
                       <div className="flex justify-end gap-2">
@@ -2198,6 +2213,7 @@ const AgentOrders = () => {
                           variant="outline"
                           onClick={() => {
                             setPaymentDialogOpen(false);
+                            setPaymentDate(today);
                             setSelectedCashboxId("");
                           }}
                         >
