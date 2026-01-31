@@ -2847,33 +2847,39 @@ const AgentOrders = () => {
 
                 <div>
                   <Label className="mb-2 block">اختر التاريخ الجديد</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className="w-full justify-start text-right"
-                      >
-                        <CalendarIcon className="ml-2 h-4 w-4" />
-                        {rescheduleDate ? format(rescheduleDate, "yyyy-MM-dd") : "اختر التاريخ"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={rescheduleDate}
-                        onSelect={setRescheduleDate}
-                        disabled={(date) => {
-                          const orderAssignedAt = new Date((rescheduleOrder as any).assigned_at || rescheduleOrder.created_at);
-                          orderAssignedAt.setHours(0, 0, 0, 0);
-                          const todayDate = new Date();
-                          todayDate.setHours(23, 59, 59, 999);
-                          return date < orderAssignedAt || date > todayDate;
-                        }}
-                        initialFocus
-                        className="pointer-events-auto"
-                      />
-                    </PopoverContent>
-                  </Popover>
+                  <Select 
+                    value={rescheduleDate ? format(rescheduleDate, "yyyy-MM-dd") : ""} 
+                    onValueChange={(val) => setRescheduleDate(new Date(val))}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="اختر التاريخ" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(() => {
+                        const orderAssignedAt = new Date((rescheduleOrder as any).assigned_at || rescheduleOrder.created_at);
+                        orderAssignedAt.setHours(0, 0, 0, 0);
+                        const todayDate = new Date();
+                        todayDate.setHours(23, 59, 59, 999);
+                        
+                        const dates: { value: string; label: string }[] = [];
+                        const current = new Date(orderAssignedAt);
+                        
+                        while (current <= todayDate) {
+                          const dateKey = format(current, "yyyy-MM-dd");
+                          const isToday = dateKey === format(new Date(), "yyyy-MM-dd");
+                          const label = isToday ? `اليوم (${dateKey})` : new Date(current).toLocaleDateString('ar-EG', { weekday: 'short', day: 'numeric', month: 'short' }) + ` (${dateKey})`;
+                          dates.push({ value: dateKey, label });
+                          current.setDate(current.getDate() + 1);
+                        }
+                        
+                        return dates.reverse().map((d) => (
+                          <SelectItem key={d.value} value={d.value}>
+                            {d.label}
+                          </SelectItem>
+                        ));
+                      })()}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="flex gap-2">
