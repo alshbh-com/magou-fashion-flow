@@ -24,6 +24,9 @@ const Cart = () => {
   const [returnOrderId, setReturnOrderId] = useState<string | null>(null);
   const [returnOrderNumber, setReturnOrderNumber] = useState<number | null>(null);
   const [returnOrderDate, setReturnOrderDate] = useState<string | null>(null);
+  const [originalOrderItems, setOriginalOrderItems] = useState<
+    Array<{ product_id: string | null; product_name: string; quantity: number; price: number }>
+  >([]);
   const [governorateOpen, setGovernorateOpen] = useState(false);
   
   const [customerInfo, setCustomerInfo] = useState({
@@ -59,6 +62,29 @@ const Cart = () => {
       setReturnOrderId(order.id);
       setReturnOrderNumber(order.order_number);
       setReturnOrderDate(order.created_at);
+
+      // Snapshot original order items to compute the returned delta when quantities decrease
+      const snapshot = (order.order_items || []).map((item: any) => {
+        const productName =
+          item?.products?.name ||
+          (() => {
+            try {
+              const d = item?.product_details ? JSON.parse(item.product_details) : null;
+              return d?.name || d?.product_name;
+            } catch {
+              return null;
+            }
+          })() ||
+          "منتج غير معروف";
+
+        return {
+          product_id: item?.product_id ?? null,
+          product_name: productName,
+          quantity: parseFloat((item?.quantity ?? 0).toString()) || 0,
+          price: parseFloat((item?.price ?? 0).toString()) || 0,
+        };
+      });
+      setOriginalOrderItems(snapshot);
       
       // Clear cart and add order items
       clearCart();
@@ -183,7 +209,7 @@ const Cart = () => {
         // جلب بيانات الأوردر الحالية قبل التعديل (علشان نحسب فرق القطع صح)
         const { data: existingOrder, error: existingOrderError } = await supabase
           .from("orders")
-          .select("total_amount, shipping_cost, agent_shipping_cost, delivery_agent_id, order_number")
+          .select("total_amount, shipping_cost, agent_shipping_cost, delivery_agent_id, order_number, customer_id")
           .eq("id", returnOrderId)
           .single();
 
@@ -256,6 +282,156 @@ const Cart = () => {
           .insert(orderItems);
 
         if (itemsError) throw itemsError;
+
+        // لو فيه نقص في القطع بعد التعديل => سجّل قيمة النقص والقطع في جدول returns
+        const normalizeExistingReturnedItems = (raw: any): any[] => {
+          let parsed: any[] = [];
+          if (typeof raw === "string") {
+            try {
+              parsed = JSON.parse(raw);
+            } catch {
+              parsed = [];
+            }
+          } else if (Array.isArray(raw)) {
+            parsed = raw;
+          }
+
+          if (!Array.isArray(parsed)) return [];
+
+          return parsed
+            .map((it: any) => {
+              const product_name = it?.product_name || it?.name || "منتج غير معروف";
+              const returned_quantity =
+                parseFloat((it?.returned_quantity ?? it?.quantity ?? 0).toString()) || 0;
+              const price = parseFloat((it?.price ?? 0).toString()) || 0;
+              const product_id = it?.product_id ?? null;
+              return { product_id, product_name, returned_quantity, price };
+            })
+            .filter((it: any) => (it.returned_quantity ?? 0) > 0);
+        };
+
+        // Baseline (before edit) — fallback to DB if state snapshot wasn't present
+        let baselineItems = originalOrderItems;
+        if (!baselineItems || baselineItems.length === 0) {
+          const { data: oldItems, error: oldItemsError } = await supabase
+            .from("order_items")
+            .select("product_id, quantity, price, product_details, products(name)")
+            .eq("order_id", returnOrderId);
+          if (oldItemsError) throw oldItemsError;
+
+          baselineItems = (oldItems || []).map((it: any) => {
+            const productName =
+              it?.products?.name ||
+              (() => {
+                try {
+                  const d = it?.product_details ? JSON.parse(it.product_details) : null;
+                  return d?.name || d?.product_name;
+                } catch {
+                  return null;
+                }
+              })() ||
+              "منتج غير معروف";
+
+            return {
+              product_id: it?.product_id ?? null,
+              product_name: productName,
+              quantity: parseFloat((it?.quantity ?? 0).toString()) || 0,
+              price: parseFloat((it?.price ?? 0).toString()) || 0,
+            };
+          });
+        }
+
+        const cartQtyByProductId = new Map<string, number>();
+        items.forEach((it) => cartQtyByProductId.set(it.id, it.quantity));
+
+        const returnedItemsDelta = baselineItems
+          .map((oldIt) => {
+            const pid = oldIt.product_id;
+            if (!pid) return null;
+            const newQty = cartQtyByProductId.get(pid) ?? 0;
+            const oldQty = oldIt.quantity ?? 0;
+            const returnedQty = Math.max(0, oldQty - newQty);
+            if (returnedQty <= 0) return null;
+            return {
+              product_id: pid,
+              product_name: oldIt.product_name,
+              returned_quantity: returnedQty,
+              price: oldIt.price,
+            };
+          })
+          .filter(Boolean) as Array<{
+          product_id: string;
+          product_name: string;
+          returned_quantity: number;
+          price: number;
+        }>;
+
+        const returnAmountFromDelta = returnedItemsDelta.reduce(
+          (sum, it) => sum + (it.returned_quantity || 0) * (it.price || 0),
+          0
+        );
+
+        if (returnAmountFromDelta > 0) {
+          const { data: existingReturnRow, error: existingReturnErr } = await supabase
+            .from("returns")
+            .select("id, return_amount, returned_items")
+            .eq("order_id", returnOrderId)
+            .maybeSingle();
+          if (existingReturnErr) throw existingReturnErr;
+
+          const mergedByKey = new Map<string, any>();
+          const existingItems = normalizeExistingReturnedItems(existingReturnRow?.returned_items);
+          existingItems.forEach((it: any) => {
+            const key = `${it.product_id ?? ""}::${it.product_name}`;
+            mergedByKey.set(key, { ...it });
+          });
+          returnedItemsDelta.forEach((it) => {
+            const key = `${it.product_id ?? ""}::${it.product_name}`;
+            const prev = mergedByKey.get(key);
+            mergedByKey.set(key, {
+              ...(prev || {}),
+              ...it,
+              returned_quantity: (prev?.returned_quantity || 0) + (it.returned_quantity || 0),
+              price: it.price || prev?.price,
+            });
+          });
+
+          const mergedItems = Array.from(mergedByKey.values()).filter(
+            (it: any) => (it.returned_quantity ?? 0) > 0
+          );
+
+          const existingAmount =
+            parseFloat((existingReturnRow?.return_amount ?? 0).toString()) || 0;
+          const newReturnAmount = existingAmount + returnAmountFromDelta;
+
+          const notes = `مرتجع من السلة - ${returnedItemsDelta
+            .map((it) => `${it.product_name} × ${it.returned_quantity}`)
+            .join(", ")}`;
+
+          if (existingReturnRow?.id) {
+            const { error: updErr } = await supabase
+              .from("returns")
+              .update({
+                delivery_agent_id: existingOrder.delivery_agent_id,
+                customer_id: existingOrder.customer_id,
+                return_amount: newReturnAmount,
+                returned_items: mergedItems as any,
+                notes,
+              })
+              .eq("id", existingReturnRow.id);
+            if (updErr) throw updErr;
+          } else {
+            const { error: insErr } = await supabase.from("returns").insert({
+              order_id: returnOrderId,
+              delivery_agent_id: existingOrder.delivery_agent_id,
+              customer_id: existingOrder.customer_id,
+              return_amount: newReturnAmount,
+              returned_items: mergedItems as any,
+              notes,
+            });
+            if (insErr) throw insErr;
+          }
+        }
 
         toast.success("تم تحديث الأوردر بنجاح!");
         clearCart();
