@@ -158,49 +158,56 @@ const Invoices = () => {
         const itemTotal = parseFloat(item.price.toString()) * quantity;
         return `
           <tr>
-            <td style="border: 1px solid #000; padding: 8px; text-align: center;">${item.products?.name || '-'}</td>
-            <td style="border: 1px solid #000; padding: 8px; text-align: center;">${quantity}</td>
-            <td style="border: 1px solid #000; padding: 8px; text-align: center;">${size}</td>
-            <td style="border: 1px solid #000; padding: 8px; text-align: center;">${color}</td>
-            <td style="border: 1px solid #000; padding: 8px; text-align: center;">${itemTotal.toFixed(2)} ج.م</td>
+            <td style="border: 2px solid #000; padding: 12px; text-align: center; font-size: 16px;">${item.products?.name || '-'}</td>
+            <td style="border: 2px solid #000; padding: 12px; text-align: center; font-size: 16px;">${quantity}</td>
+            <td style="border: 2px solid #000; padding: 12px; text-align: center; font-size: 16px;">${size}</td>
+            <td style="border: 2px solid #000; padding: 12px; text-align: center; font-size: 16px;">${color}</td>
+            <td style="border: 2px solid #000; padding: 12px; text-align: center; font-size: 16px;">${itemTotal.toFixed(2)} ج.م</td>
           </tr>
         `;
       }).join('') || '';
       
       return `
-      <div style="width: 148mm; height: 210mm; padding: 10mm; page-break-after: always; font-family: Arial;">
-        <div style="text-align: center; margin-bottom: 20px;">
-          <h1 style="font-size: 32px; font-weight: bold; color: #d4af37; margin: 0;">Zahra</h1>
+      <div style="width: 100%; min-height: 100vh; padding: 20mm; page-break-after: always; font-family: Arial; position: relative; box-sizing: border-box;">
+        <!-- Watermark -->
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-35deg); font-size: 120px; font-weight: bold; color: rgba(212, 175, 55, 0.15); pointer-events: none; z-index: 0; white-space: nowrap;">
+          Zahra
         </div>
-        <h2 style="text-align: center; margin: 10px 0; font-size: 18px;">فاتورة</h2>
-        <hr style="border: 1px solid #ddd;"/>
-        <div style="margin: 15px 0; line-height: 1.8;">
-          <p style="margin: 5px 0;"><strong>رقم الأوردر:</strong> #${order.order_number || order.id.slice(0, 8)}</p>
-          <p style="margin: 5px 0;"><strong>التاريخ:</strong> ${new Date(order.created_at).toLocaleDateString('ar-EG')}</p>
-          <p style="margin: 5px 0;"><strong>العميل:</strong> ${order.customers?.name}</p>
-          <p style="margin: 5px 0;"><strong>الهاتف:</strong> ${order.customers?.phone}</p>
-          ${order.customers?.phone2 ? `<p style="margin: 5px 0;"><strong>الهاتف 2:</strong> ${order.customers.phone2}</p>` : ''}
-          <p style="margin: 5px 0;"><strong>المحافظة:</strong> ${order.governorates?.name || order.customers?.governorate || "-"}</p>
-          <p style="margin: 5px 0;"><strong>سعر شحن المحافظة:</strong> ${order.governorates?.shipping_cost || order.shipping_cost || 0} ج.م</p>
-          <p style="margin: 5px 0;"><strong>العنوان:</strong> ${order.customers?.address}</p>
-          ${order.notes ? `<p style="margin: 5px 0;"><strong>ملاحظات:</strong> ${order.notes}</p>` : ''}
-        </div>
-        <hr style="border: 1px solid #ddd;"/>
-        <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">
-          <tr>
-            <th style="border: 1px solid #000; padding: 10px; background-color: #f8f8f8;">المنتج</th>
-            <th style="border: 1px solid #000; padding: 10px; background-color: #f8f8f8;">الكمية</th>
-            <th style="border: 1px solid #000; padding: 10px; background-color: #f8f8f8;">المقاس</th>
-            <th style="border: 1px solid #000; padding: 10px; background-color: #f8f8f8;">اللون</th>
-            <th style="border: 1px solid #000; padding: 10px; background-color: #f8f8f8;">السعر</th>
-          </tr>
-          ${itemsHtml}
-        </table>
-        <hr style="border: 1px solid #ddd; margin-top: 15px;"/>
-        <div style="margin-top: 15px; text-align: left;">
-          <p style="margin: 10px 0;"><strong>سعر المنتجات:</strong> ${totalAmount.toFixed(2)} ج.م</p>
-          <p style="margin: 10px 0;"><strong>سعر الشحن:</strong> ${customerShipping.toFixed(2)} ج.م</p>
-          <p style="font-size: 18px; font-weight: bold; margin-top: 15px; border-top: 2px solid #000; padding-top: 10px;"><strong>الإجمالي:</strong> ${totalPrice.toFixed(2)} ج.م</p>
+        
+        <div style="position: relative; z-index: 1;">
+          <div style="text-align: center; margin-bottom: 30px;">
+            <h1 style="font-size: 48px; font-weight: bold; color: #d4af37; margin: 0;">Zahra</h1>
+          </div>
+          <h2 style="text-align: center; margin: 15px 0; font-size: 24px;">فاتورة</h2>
+          <hr style="border: 2px solid #ddd;"/>
+          <div style="margin: 20px 0; line-height: 2; font-size: 18px;">
+            <p style="margin: 8px 0;"><strong>رقم الأوردر:</strong> #${order.order_number || order.id.slice(0, 8)}</p>
+            <p style="margin: 8px 0;"><strong>التاريخ:</strong> ${new Date(order.created_at).toLocaleDateString('ar-EG')}</p>
+            <p style="margin: 8px 0;"><strong>العميل:</strong> ${order.customers?.name}</p>
+            <p style="margin: 8px 0;"><strong>الهاتف:</strong> ${order.customers?.phone}</p>
+            ${order.customers?.phone2 ? `<p style="margin: 8px 0;"><strong>الهاتف 2:</strong> ${order.customers.phone2}</p>` : ''}
+            <p style="margin: 8px 0;"><strong>المحافظة:</strong> ${order.governorates?.name || order.customers?.governorate || "-"}</p>
+            <p style="margin: 8px 0;"><strong>سعر شحن المحافظة:</strong> ${order.governorates?.shipping_cost || order.shipping_cost || 0} ج.م</p>
+            <p style="margin: 8px 0;"><strong>العنوان:</strong> ${order.customers?.address}</p>
+            ${order.notes ? `<p style="margin: 8px 0;"><strong>ملاحظات:</strong> ${order.notes}</p>` : ''}
+          </div>
+          <hr style="border: 2px solid #ddd;"/>
+          <table style="width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 18px;">
+            <tr>
+              <th style="border: 2px solid #000; padding: 15px; background-color: #f8f8f8;">المنتج</th>
+              <th style="border: 2px solid #000; padding: 15px; background-color: #f8f8f8;">الكمية</th>
+              <th style="border: 2px solid #000; padding: 15px; background-color: #f8f8f8;">المقاس</th>
+              <th style="border: 2px solid #000; padding: 15px; background-color: #f8f8f8;">اللون</th>
+              <th style="border: 2px solid #000; padding: 15px; background-color: #f8f8f8;">السعر</th>
+            </tr>
+            ${itemsHtml}
+          </table>
+          <hr style="border: 2px solid #ddd; margin-top: 20px;"/>
+          <div style="margin-top: 20px; text-align: left; font-size: 20px;">
+            <p style="margin: 12px 0;"><strong>سعر المنتجات:</strong> ${totalAmount.toFixed(2)} ج.م</p>
+            <p style="margin: 12px 0;"><strong>سعر الشحن:</strong> ${customerShipping.toFixed(2)} ج.م</p>
+            <p style="font-size: 24px; font-weight: bold; margin-top: 20px; border-top: 3px solid #000; padding-top: 15px;"><strong>الإجمالي:</strong> ${totalPrice.toFixed(2)} ج.م</p>
+          </div>
         </div>
       </div>
     `;
