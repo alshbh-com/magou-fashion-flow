@@ -168,9 +168,9 @@ const Invoices = () => {
       }).join('') || '';
       
       return `
-      <div style="width: 100%; min-height: 100vh; padding: 20mm; page-break-after: always; font-family: Arial; position: relative; box-sizing: border-box;">
+      <div class="invoice-page" style="width: 100%; padding: 15mm; font-family: Arial; position: relative; box-sizing: border-box;">
         <!-- Watermark -->
-        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-35deg); font-size: 120px; font-weight: bold; color: rgba(212, 175, 55, 0.15); pointer-events: none; z-index: 0; white-space: nowrap;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-35deg); font-size: 140px; font-weight: bold; color: rgba(212, 175, 55, 0.25); pointer-events: none; z-index: 0; white-space: nowrap;">
           Zahra
         </div>
         
@@ -218,14 +218,23 @@ const Invoices = () => {
         <head>
           <title>طباعة الفواتير</title>
           <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
             body { font-family: Arial, sans-serif; }
+            .invoice-page { page-break-after: always; }
+            .invoice-page:last-child { page-break-after: auto; }
+            @page { margin: 0; size: A4; }
+            @media print {
+              html, body { height: auto; }
+              .invoice-page { page-break-inside: avoid; }
+              .invoice-page:last-child { page-break-after: auto; }
+            }
           </style>
         </head>
         <body>${invoicesHTML}</body>
       </html>
     `);
     printWindow.document.close();
-    printWindow.print();
+    setTimeout(() => printWindow.print(), 100);
   };
 
   // تحديد/إلغاء تحديد الكل
