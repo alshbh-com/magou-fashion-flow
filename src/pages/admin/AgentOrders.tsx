@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ArrowLeft, PackageX, Printer, Download, AlertTriangle, Trash2, MessageCircle, ArrowDown, Plus, Edit2, ChevronDown, ChevronUp, Calendar, Package, Check, Lock } from "lucide-react";
+import RescheduleOrderDialog from "@/components/admin/RescheduleOrderDialog";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import * as XLSX from 'xlsx';
@@ -1989,6 +1990,7 @@ const AgentOrders = () => {
                                  </AlertDialogFooter>
                                </AlertDialogContent>
                              </AlertDialog>
+                             <RescheduleOrderDialog order={order} />
                              <AlertDialog>
                                <AlertDialogTrigger asChild>
                                  <Button
