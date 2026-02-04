@@ -188,8 +188,16 @@ const UserManagement = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin_users'] });
-      toast.success('تم حذف المستخدم');
+      toast.success('تم حذف المستخدم بنجاح');
       logActivity('حذف مستخدم', 'user_management');
+    },
+    onError: (error: any) => {
+      console.error('Delete error:', error);
+      if (error.code === '23503') {
+        toast.error('لا يمكن حذف المستخدم لأنه مرتبط ببيانات أخرى');
+      } else {
+        toast.error('حدث خطأ أثناء حذف المستخدم');
+      }
     }
   });
 
