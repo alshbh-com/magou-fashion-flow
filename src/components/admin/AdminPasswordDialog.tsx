@@ -51,9 +51,10 @@ const AdminPasswordDialog = ({
 
       if (data?.password === password) {
         toast.success("تم التحقق بنجاح");
-        onConfirm();
-        onOpenChange(false);
         setPassword("");
+        onOpenChange(false);
+        // Call onConfirm after dialog closes to ensure state is stable
+        setTimeout(() => onConfirm(), 100);
       } else {
         // Log failed attempt
         await logActivity("محاولة حذف فاشلة - كلمة مرور خاطئة", itemType, {
