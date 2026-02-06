@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import * as XLSX from 'xlsx';
 import { useActivityLogger } from "@/hooks/useActivityLogger";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
+import { useDailyCashbox, getDailyCashboxName } from "@/hooks/useDailyCashbox";
 
 const statusLabels: Record<string, string> = {
   shipped: "تم الشحن",
