@@ -2548,13 +2548,6 @@ const AgentOrders = () => {
                       )}
                     </div>
 
-  // Auto-select today's cashbox when it becomes available
-  useEffect(() => {
-    if (todayCashbox && !selectedCashboxId) {
-      setSelectedCashboxId(todayCashbox.id);
-    }
-  }, [todayCashbox]);
-
 
                     {/* المرتجعات */}
                     <div className="p-4 bg-orange-50 dark:bg-orange-950/20 rounded-lg border border-orange-200 dark:border-orange-800">
