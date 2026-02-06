@@ -305,20 +305,13 @@ const AgentOrders = () => {
     },
   });
 
-  // Query for cashboxes (active only)
-  const { data: cashboxes } = useQuery({
-    queryKey: ["cashboxes-active"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("cashbox")
-        .select("*")
-        .eq("is_active", true)
-        .order("name");
-      
-      if (error) throw error;
-      return data;
-    },
-  });
+  // Use daily cashbox hook (auto-creates today's cashbox)
+  const { todayCashbox, today: todayCashboxDate, cashboxes } = useDailyCashbox();
+
+  // State for admin password when selecting non-today cashbox
+  const [cashboxPasswordDialogOpen, setCashboxPasswordDialogOpen] = useState(false);
+  const [cashboxPasswordInput, setCashboxPasswordInput] = useState("");
+  const [nonTodayCashboxUnlocked, setNonTodayCashboxUnlocked] = useState(false);
 
   // Calculate summary data
   const calculateSummary = (dateFilter?: string) => {
