@@ -611,7 +611,8 @@ const AgentOrders = () => {
       setPaymentDialogOpen(false);
       setPaymentAmount("");
       setPaymentDate(today);
-      setSelectedCashboxId("");
+      setSelectedCashboxId(todayCashbox?.id || "");
+      setNonTodayCashboxUnlocked(false);
     },
     onError: (error: any) => {
       console.error("Add payment error:", error);
