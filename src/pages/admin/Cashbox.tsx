@@ -16,6 +16,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
+import { useDailyCashbox } from "@/hooks/useDailyCashbox";
 
 const TRANSACTION_REASONS = [
   { value: 'order', label: 'طلب' },
