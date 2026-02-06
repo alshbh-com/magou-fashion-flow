@@ -16,6 +16,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
+import { useDailyCashbox } from "@/hooks/useDailyCashbox";
 
 const TRANSACTION_REASONS = [
   { value: 'order', label: 'طلب' },
@@ -58,20 +59,8 @@ const Cashbox = () => {
   // المطلوب: مستخدم "مشاهدة" للخزنة يقدر ينشئ خزنة جديدة فقط
   const canCreateCashbox = canManageCashbox || canView('treasury') || canView('cashbox');
 
-  // Fetch all cashboxes
-  const { data: cashboxes, isLoading: loadingCashboxes } = useQuery({
-    queryKey: ["cashboxes"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("cashbox")
-        .select("*")
-        .eq("is_active", true)
-        .order("created_at", { ascending: false });
-      
-      if (error) throw error;
-      return data;
-    },
-  });
+  // Use daily cashbox hook (auto-creates today's cashbox)
+  const { cashboxes, isLoading: loadingCashboxes } = useDailyCashbox();
 
   // Fetch transactions for selected cashbox
   const { data: transactions, isLoading: loadingTransactions } = useQuery({

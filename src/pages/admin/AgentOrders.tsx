@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import * as XLSX from 'xlsx';
 import { useActivityLogger } from "@/hooks/useActivityLogger";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
+import { useDailyCashbox, getDailyCashboxName } from "@/hooks/useDailyCashbox";
 
 const statusLabels: Record<string, string> = {
   shipped: "تم الشحن",
@@ -304,20 +305,20 @@ const AgentOrders = () => {
     },
   });
 
-  // Query for cashboxes (active only)
-  const { data: cashboxes } = useQuery({
-    queryKey: ["cashboxes-active"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("cashbox")
-        .select("*")
-        .eq("is_active", true)
-        .order("name");
-      
-      if (error) throw error;
-      return data;
-    },
-  });
+  // Use daily cashbox hook (auto-creates today's cashbox)
+  const { todayCashbox, today: todayCashboxDate, cashboxes } = useDailyCashbox();
+
+  // State for admin password when selecting non-today cashbox
+  const [cashboxPasswordDialogOpen, setCashboxPasswordDialogOpen] = useState(false);
+  const [cashboxPasswordInput, setCashboxPasswordInput] = useState("");
+  const [nonTodayCashboxUnlocked, setNonTodayCashboxUnlocked] = useState(false);
+
+  // Auto-select today's cashbox when it becomes available
+  useEffect(() => {
+    if (todayCashbox && !selectedCashboxId) {
+      setSelectedCashboxId(todayCashbox.id);
+    }
+  }, [todayCashbox]);
 
   // Calculate summary data
   const calculateSummary = (dateFilter?: string) => {
@@ -617,7 +618,8 @@ const AgentOrders = () => {
       setPaymentDialogOpen(false);
       setPaymentAmount("");
       setPaymentDate(today);
-      setSelectedCashboxId("");
+      setSelectedCashboxId(todayCashbox?.id || "");
+      setNonTodayCashboxUnlocked(false);
     },
     onError: (error: any) => {
       console.error("Add payment error:", error);
@@ -2105,20 +2107,40 @@ const AgentOrders = () => {
                         </div>
                         <div>
                           <Label>الخزنة (إجباري)</Label>
-                          <Select value={selectedCashboxId} onValueChange={setSelectedCashboxId}>
+                          <Select 
+                            value={selectedCashboxId} 
+                            onValueChange={(val) => {
+                              // Check if selected cashbox is today's
+                              const selectedBox = cashboxes?.find((c: any) => c.id === val);
+                              const isTodayBox = selectedBox?.name === getDailyCashboxName(todayCashboxDate);
+                              
+                              if (!isTodayBox && !nonTodayCashboxUnlocked) {
+                                // Require admin password
+                                setCashboxPasswordDialogOpen(true);
+                                return;
+                              }
+                              setSelectedCashboxId(val);
+                            }}
+                          >
                             <SelectTrigger className="w-full">
                               <SelectValue placeholder="اختر الخزنة" />
                             </SelectTrigger>
                             <SelectContent>
-                              {cashboxes?.map((cashbox: any) => (
-                                <SelectItem key={cashbox.id} value={cashbox.id}>
-                                  {cashbox.name}
-                                </SelectItem>
-                              ))}
+                              {cashboxes?.map((cashbox: any) => {
+                                const isTodayBox = cashbox.name === getDailyCashboxName(todayCashboxDate);
+                                return (
+                                  <SelectItem key={cashbox.id} value={cashbox.id}>
+                                    {cashbox.name} {isTodayBox ? "✅" : "🔒"}
+                                  </SelectItem>
+                                );
+                              })}
                             </SelectContent>
                           </Select>
                           <p className="text-xs text-muted-foreground mt-1">
-                            سيتم تسجيل المبلغ كـ <span className="font-medium">إيداع</span> داخل الخزنة المختارة مع اسم المستخدم.
+                            {nonTodayCashboxUnlocked 
+                              ? "✅ تم فتح القفل - يمكنك اختيار أي خزنة"
+                              : "خزنة اليوم مختارة تلقائياً. اختيار خزنة أخرى يتطلب كلمة المرور الإدارية 🔒"
+                            }
                           </p>
                         </div>
                         <p className="text-sm text-muted-foreground">
@@ -2131,13 +2153,67 @@ const AgentOrders = () => {
                           onClick={() => {
                             setPaymentDialogOpen(false);
                             setPaymentDate(today);
-                            setSelectedCashboxId("");
+                            setSelectedCashboxId(todayCashbox?.id || "");
+                            setNonTodayCashboxUnlocked(false);
                           }}
                         >
                           إلغاء
                         </Button>
                         <Button onClick={handleAddPayment}>إضافة الدفعة</Button>
                       </div>
+
+                      {/* Admin Password Dialog for non-today cashbox */}
+                      <Dialog open={cashboxPasswordDialogOpen} onOpenChange={setCashboxPasswordDialogOpen}>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                              <Lock className="h-5 w-5" />
+                              كلمة المرور الإدارية مطلوبة
+                            </DialogTitle>
+                          </DialogHeader>
+                          <p className="text-sm text-muted-foreground">
+                            اختيار خزنة غير خزنة اليوم يتطلب كلمة المرور الإدارية
+                          </p>
+                          <Input
+                            type="password"
+                            value={cashboxPasswordInput}
+                            onChange={(e) => setCashboxPasswordInput(e.target.value)}
+                            placeholder="أدخل كلمة المرور الإدارية"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                if (cashboxPasswordInput === "Magdi17121997") {
+                                  setNonTodayCashboxUnlocked(true);
+                                  setCashboxPasswordDialogOpen(false);
+                                  setCashboxPasswordInput("");
+                                  toast.success("تم فتح القفل - يمكنك اختيار أي خزنة");
+                                } else {
+                                  toast.error("كلمة المرور غير صحيحة");
+                                }
+                              }
+                            }}
+                          />
+                          <div className="flex justify-end gap-2">
+                            <Button variant="ghost" onClick={() => {
+                              setCashboxPasswordDialogOpen(false);
+                              setCashboxPasswordInput("");
+                            }}>
+                              إلغاء
+                            </Button>
+                            <Button onClick={() => {
+                              if (cashboxPasswordInput === "Magdi17121997") {
+                                setNonTodayCashboxUnlocked(true);
+                                setCashboxPasswordDialogOpen(false);
+                                setCashboxPasswordInput("");
+                                toast.success("تم فتح القفل - يمكنك اختيار أي خزنة");
+                              } else {
+                                toast.error("كلمة المرور غير صحيحة");
+                              }
+                            }}>
+                              تأكيد
+                            </Button>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
                     </DialogContent>
                   </Dialog>
 
