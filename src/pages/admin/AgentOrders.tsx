@@ -313,6 +313,13 @@ const AgentOrders = () => {
   const [cashboxPasswordInput, setCashboxPasswordInput] = useState("");
   const [nonTodayCashboxUnlocked, setNonTodayCashboxUnlocked] = useState(false);
 
+  // Auto-select today's cashbox when it becomes available
+  useEffect(() => {
+    if (todayCashbox && !selectedCashboxId) {
+      setSelectedCashboxId(todayCashbox.id);
+    }
+  }, [todayCashbox]);
+
   // Calculate summary data
   const calculateSummary = (dateFilter?: string) => {
     if (!agentPaymentsData || !allAgentOrders) return null;
