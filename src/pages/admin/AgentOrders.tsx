@@ -81,6 +81,7 @@ const AgentOrders = () => {
   const [paymentAmount, setPaymentAmount] = useState<string>("");
   const [paymentDate, setPaymentDate] = useState<string>(today); // تاريخ الدفعة
   const [selectedCashboxId, setSelectedCashboxId] = useState<string>(""); // الخزنة المختارة
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "transfer">("cash"); // طريقة الدفع
 
   // إدارة/تعديل/حذف الدفعات لأي يوم
   const [paymentsManagerOpen, setPaymentsManagerOpen] = useState(false);
