@@ -2109,6 +2109,7 @@ const AgentOrders = () => {
                               <SelectItem value="transfer">💳 نقدي (تحويل)</SelectItem>
                             </SelectContent>
                           </Select>
+                        </div>
                         <div>
                           <Label>إضافة الدفعة ليوم</Label>
                           <Select value={paymentDate} onValueChange={setPaymentDate}>
