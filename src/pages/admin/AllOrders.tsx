@@ -15,6 +15,7 @@ import { ArrowLeft, PackageX } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { formatOrderItems, formatSizesDisplay } from "@/lib/formatOrderItems";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 
 interface ReturnItem {
   product_id: string | null;
@@ -27,6 +28,8 @@ interface ReturnItem {
 const AllOrders = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { canEdit } = useAdminAuth();
+  const canEditAllOrders = canEdit('all_orders');
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
@@ -652,6 +655,7 @@ const AllOrders = () => {
                           <TableCell className="text-xs">
                             {new Date(order.created_at).toLocaleDateString("ar-EG")}
                           </TableCell>
+                          {canEditAllOrders ? (
                           <TableCell>
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
@@ -705,6 +709,11 @@ const AllOrders = () => {
                               </AlertDialogContent>
                             </AlertDialog>
                           </TableCell>
+                          ) : (
+                          <TableCell>
+                            <span className="text-xs text-muted-foreground">مشاهدة فقط</span>
+                          </TableCell>
+                          )}
                         </TableRow>
                       );
                     })}

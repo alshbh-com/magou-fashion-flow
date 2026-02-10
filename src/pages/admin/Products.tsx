@@ -12,10 +12,13 @@ import { Trash2, Plus, ArrowLeft, Edit, Tag, X, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 
 const Products = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { canEdit } = useAdminAuth();
+  const canEditProducts = canEdit('products');
   const [open, setOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -252,7 +255,13 @@ const Products = () => {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>المنتجات</CardTitle>
+            <div className="flex items-center gap-2">
+              <CardTitle>المنتجات</CardTitle>
+              {!canEditProducts && (
+                <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded">مشاهدة فقط</span>
+              )}
+            </div>
+            {canEditProducts && (
             <Dialog open={open} onOpenChange={(isOpen) => {
               if (!isOpen) resetForm();
               else setOpen(isOpen);
@@ -535,6 +544,7 @@ const Products = () => {
                 </form>
               </DialogContent>
             </Dialog>
+            )}
           </CardHeader>
           <CardContent>
             {!products || products.length === 0 ? (
@@ -569,6 +579,7 @@ const Products = () => {
                       <p className="text-sm text-muted-foreground mb-4">
                         الكمية: {product.stock}
                       </p>
+                      {canEditProducts && (
                       <div className="flex gap-2">
                         <Button
                           variant="outline"
@@ -587,6 +598,7 @@ const Products = () => {
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
+                      )}
                     </CardContent>
                   </Card>
                 ))}

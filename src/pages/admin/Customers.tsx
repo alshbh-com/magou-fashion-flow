@@ -8,12 +8,15 @@ import { Trash2, ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import SearchBar from "@/components/admin/SearchBar";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useState } from "react";
 
 const Customers = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { canEdit } = useAdminAuth();
+  const canEditCustomers = canEdit('customers');
   const [governorateFilter, setGovernorateFilter] = useState<string>("all");
 
   const egyptGovernorates = [
@@ -76,7 +79,12 @@ const Customers = () => {
         <Card>
           <CardHeader>
             <div className="space-y-4">
-              <CardTitle>العملاء</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle>العملاء</CardTitle>
+                {!canEditCustomers && (
+                  <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded">مشاهدة فقط</span>
+                )}
+              </div>
               <div className="flex items-center gap-4">
                 <span className="text-sm font-medium">فلتر حسب المحافظة:</span>
                 <Select value={governorateFilter} onValueChange={setGovernorateFilter}>
@@ -109,7 +117,7 @@ const Customers = () => {
                       <TableHead>المحافظة</TableHead>
                       <TableHead>العنوان</TableHead>
                       <TableHead>التاريخ</TableHead>
-                      <TableHead>إجراءات</TableHead>
+                      {canEditCustomers && <TableHead>إجراءات</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -126,6 +134,7 @@ const Customers = () => {
                         <TableCell>
                           {new Date(customer.created_at).toLocaleDateString("ar-EG")}
                         </TableCell>
+                        {canEditCustomers && (
                         <TableCell>
                           <Button
                             variant="destructive"
@@ -135,6 +144,7 @@ const Customers = () => {
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>

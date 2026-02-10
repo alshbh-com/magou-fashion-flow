@@ -39,7 +39,8 @@ const AgentOrders = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { logAction } = useActivityLogger();
-  const { currentUser } = useAdminAuth();
+  const { currentUser, canEdit } = useAdminAuth();
+  const canEditAgentOrders = canEdit('agent_orders');
   const summaryRef = useRef<HTMLDivElement>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -1712,6 +1713,7 @@ const AgentOrders = () => {
                         <Printer className="ml-2 h-4 w-4" />
                         طباعة
                       </Button>
+                      {canEditAgentOrders && (
                       <Button 
                         onClick={() => setBulkStatusDialogOpen(true)} 
                         size="sm" 
@@ -1719,6 +1721,7 @@ const AgentOrders = () => {
                       >
                         تغيير الحالة للمحدد
                       </Button>
+                      )}
                     </div>
                   )}
                 </>
@@ -1948,6 +1951,7 @@ const AgentOrders = () => {
                              >
                                <Printer className="h-4 w-4" />
                              </Button>
+                             {canEditAgentOrders && (<>
                              <AlertDialog>
                                <AlertDialogTrigger asChild>
                                  <Button
@@ -2025,7 +2029,8 @@ const AgentOrders = () => {
                                  </AlertDialogFooter>
                                </AlertDialogContent>
                              </AlertDialog>
-                           </div>
+                           </>)}
+                            </div>
                          </TableCell>
                       </TableRow>
                       );
@@ -2077,6 +2082,7 @@ const AgentOrders = () => {
                     طباعة الملخص
                   </Button>
 
+                  {canEditAgentOrders && (<>
                   <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
                     <DialogTrigger asChild>
                       <Button size="sm">
@@ -2405,6 +2411,7 @@ const AgentOrders = () => {
                       </div>
                     </DialogContent>
                   </Dialog>
+                  </>)}
                 </div>
               </div>
               <div className="mt-4 flex items-center gap-4 flex-wrap">

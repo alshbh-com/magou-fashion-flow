@@ -14,10 +14,13 @@ import { Trash2, Plus, ArrowLeft, Pencil } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 
 const Categories = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { canEdit } = useAdminAuth();
+  const canEditCategories = canEdit('categories');
   const [open, setOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<any>(null);
@@ -191,7 +194,13 @@ const Categories = () => {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>الأقسام</CardTitle>
+            <div className="flex items-center gap-2">
+              <CardTitle>الأقسام</CardTitle>
+              {!canEditCategories && (
+                <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded">مشاهدة فقط</span>
+              )}
+            </div>
+            {canEditCategories && (
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
                 <Button>
@@ -282,6 +291,7 @@ const Categories = () => {
                 </form>
               </DialogContent>
             </Dialog>
+            )}
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -297,7 +307,7 @@ const Categories = () => {
                       <TableHead>الوصف</TableHead>
                       <TableHead>الترتيب</TableHead>
                       <TableHead>الحالة</TableHead>
-                      <TableHead>إجراءات</TableHead>
+                      {canEditCategories && <TableHead>إجراءات</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -311,6 +321,7 @@ const Categories = () => {
                             {category.is_active ? "نشط" : "غير نشط"}
                           </span>
                         </TableCell>
+                        {canEditCategories && (
                         <TableCell>
                           <div className="flex gap-2">
                             <Button
@@ -343,6 +354,7 @@ const Categories = () => {
                             </AlertDialog>
                           </div>
                         </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>
