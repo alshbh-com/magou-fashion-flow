@@ -2099,6 +2099,17 @@ const AgentOrders = () => {
                           />
                         </div>
                         <div>
+                          <Label>طريقة الدفع</Label>
+                          <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as "cash" | "transfer")}>
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="cash">💵 كاش</SelectItem>
+                              <SelectItem value="transfer">💳 نقدي (تحويل)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        <div>
                           <Label>إضافة الدفعة ليوم</Label>
                           <Select value={paymentDate} onValueChange={setPaymentDate}>
                             <SelectTrigger className="w-full">
