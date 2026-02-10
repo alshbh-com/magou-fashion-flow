@@ -210,7 +210,7 @@ const Cashbox = () => {
         { amount: transactionForm.amount, reason: transactionForm.reason }
       );
       setAddTransactionOpen(false);
-      setTransactionForm({ type: "income", amount: "", reason: "manual", description: "" });
+      setTransactionForm({ type: "income", amount: "", reason: "manual", description: "", payment_method: "cash" });
     },
     onError: (error: any) => {
       console.error('Transaction error:', error);
