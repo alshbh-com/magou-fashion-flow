@@ -2175,6 +2175,7 @@ const AgentOrders = () => {
                             setPaymentDate(today);
                             setSelectedCashboxId(todayCashbox?.id || "");
                             setNonTodayCashboxUnlocked(false);
+                            setPaymentMethod("cash");
                           }}
                         >
                           إلغاء
