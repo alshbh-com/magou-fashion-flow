@@ -587,6 +587,7 @@ const AgentOrders = () => {
         insertedPaymentId = paymentRow?.id || null;
 
         // 2) Create the cashbox deposit (income)
+        const methodLabel = method === 'cash' ? 'كاش' : 'نقدي';
         const { error: cashboxError } = await supabase
           .from("cashbox_transactions")
           .insert({
@@ -594,9 +595,10 @@ const AgentOrders = () => {
             amount,
             type: "income",
             reason: "manual",
-            description: `إيداع (دفعة مقدمة) من ${agentName} - ${amount.toFixed(2)} ج.م • بواسطة ${currentUser?.username || "غير معروف"}`,
+            description: `إيداع (دفعة مقدمة) من ${agentName} - ${amount.toFixed(2)} ج.م (${methodLabel}) • بواسطة ${currentUser?.username || "غير معروف"}`,
             user_id: currentUser?.id || null,
             username: currentUser?.username || "غير معروف",
+            payment_method: method,
           });
 
         if (cashboxError) throw cashboxError;
