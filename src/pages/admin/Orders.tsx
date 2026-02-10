@@ -17,10 +17,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import * as XLSX from 'xlsx';
 import { formatOrderItems, formatSizesDisplay } from "@/lib/formatOrderItems";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 
 const Orders = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { canEdit } = useAdminAuth();
+  const canEditOrders = canEdit('orders');
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [bulkAgentId, setBulkAgentId] = useState<string>("");
   const [bulkShippingCost, setBulkShippingCost] = useState<number>(0);
@@ -640,10 +643,15 @@ const Orders = () => {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <CardTitle>الأوردرات</CardTitle>
+                  {!canEditOrders && (
+                    <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded">مشاهدة فقط</span>
+                  )}
+                  {canEditOrders && (
                   <Button onClick={() => setManualOrderDialogOpen(true)} size="sm" variant="outline">
                     <Plus className="ml-2 h-4 w-4" />
                     إضافة يدوي
                   </Button>
+                  )}
                 </div>
                 {selectedOrders.length > 0 && (
                   <div className="flex items-center gap-2">
@@ -658,6 +666,8 @@ const Orders = () => {
                       <Printer className="ml-2 h-4 w-4" />
                       طباعة الفواتير
                     </Button>
+                    {canEditOrders && (
+                    <>
                     <Button onClick={() => setBarcodeDialogOpen(true)} size="sm" variant="outline">
                       <Barcode className="ml-2 h-4 w-4" />
                       تعيين بالباركود
@@ -686,6 +696,8 @@ const Orders = () => {
                       <UserCheck className="ml-2 h-4 w-4" />
                       تعيين المندوب
                     </Button>
+                    </>
+                    )}
                   </div>
                 )}
               </div>
@@ -789,7 +801,7 @@ const Orders = () => {
                       <TableHead>السعر النهائي</TableHead>
                       <TableHead>الملاحظات</TableHead>
                       <TableHead>التاريخ</TableHead>
-                      <TableHead>إجراءات</TableHead>
+                      {canEditOrders && <TableHead>إجراءات</TableHead>}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -871,7 +883,7 @@ const Orders = () => {
                             {finalAmount.toFixed(2)} ج.م
                           </TableCell>
                           <TableCell className="max-w-xs">
-                            {editingNotes[order.id] !== undefined ? (
+                            {canEditOrders && editingNotes[order.id] !== undefined ? (
                               <div className="space-y-2">
                                 <Textarea
                                   value={editingNotes[order.id]}
@@ -901,16 +913,17 @@ const Orders = () => {
                               </div>
                             ) : (
                               <div 
-                                className="cursor-pointer hover:bg-accent/20 p-2 rounded break-words whitespace-normal"
-                                onClick={() => setEditingNotes({ ...editingNotes, [order.id]: order.notes || "" })}
+                                className={`p-2 rounded break-words whitespace-normal ${canEditOrders ? 'cursor-pointer hover:bg-accent/20' : ''}`}
+                                onClick={() => canEditOrders && setEditingNotes({ ...editingNotes, [order.id]: order.notes || "" })}
                               >
-                                {order.notes || "اضغط لإضافة ملاحظة"}
+                                {order.notes || (canEditOrders ? "اضغط لإضافة ملاحظة" : "-")}
                               </div>
                             )}
                           </TableCell>
                           <TableCell className="text-xs">
                             {new Date(order.created_at).toLocaleDateString("ar-EG")}
                           </TableCell>
+                          {canEditOrders && (
                           <TableCell>
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
@@ -934,6 +947,7 @@ const Orders = () => {
                               </AlertDialogContent>
                             </AlertDialog>
                           </TableCell>
+                          )}
                         </TableRow>
                       );
                     })}

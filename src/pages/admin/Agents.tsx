@@ -12,10 +12,13 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { Trash2, Plus, ArrowLeft, Edit } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 
 const Agents = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { canEdit } = useAdminAuth();
+  const canEditAgents = canEdit('agents');
   const [open, setOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<any>(null);
   const [logOpen, setLogOpen] = useState(false);
@@ -220,7 +223,13 @@ const Agents = () => {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>بيانات المندوبين</CardTitle>
+            <div className="flex items-center gap-2">
+              <CardTitle>بيانات المندوبين</CardTitle>
+              {!canEditAgents && (
+                <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded">مشاهدة فقط</span>
+              )}
+            </div>
+            {canEditAgents && (
             <Dialog open={open} onOpenChange={(isOpen) => {
               setOpen(isOpen);
               if (!isOpen) {
@@ -272,6 +281,7 @@ const Agents = () => {
                 </form>
               </DialogContent>
             </Dialog>
+            )}
           </CardHeader>
           <CardContent>
             {!agents || agents.length === 0 ? (
@@ -309,6 +319,8 @@ const Agents = () => {
                             >
                               عرض السجل
                             </Button>
+                            {canEditAgents && (
+                            <>
                             <Button
                               variant="outline"
                               size="icon"
@@ -323,6 +335,8 @@ const Agents = () => {
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
+                            </>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>

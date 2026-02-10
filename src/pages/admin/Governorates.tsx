@@ -11,10 +11,13 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { ArrowLeft, Save, Plus, Trash2, Pencil } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { useAdminAuth } from "@/contexts/AdminAuthContext";
 
 const Governorates = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { canEdit } = useAdminAuth();
+  const canEditGovernorates = canEdit('governorates');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [shippingCosts, setShippingCosts] = useState<Record<string, number>>({});
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -157,7 +160,13 @@ const Governorates = () => {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>المحافظات وأسعار الشحن</CardTitle>
+            <div className="flex items-center gap-2">
+              <CardTitle>المحافظات وأسعار الشحن</CardTitle>
+              {!canEditGovernorates && (
+                <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded">مشاهدة فقط</span>
+              )}
+            </div>
+            {canEditGovernorates && (
             <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
               <DialogTrigger asChild>
                 <Button>
@@ -197,6 +206,7 @@ const Governorates = () => {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+            )}
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
@@ -205,7 +215,7 @@ const Governorates = () => {
                   <TableRow>
                     <TableHead>المحافظة</TableHead>
                     <TableHead>سعر الشحن (ج.م)</TableHead>
-                    <TableHead>إجراءات</TableHead>
+                    {canEditGovernorates && <TableHead>إجراءات</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -213,6 +223,7 @@ const Governorates = () => {
                     <TableRow key={gov.id}>
                       <TableCell className="font-medium">{gov.name}</TableCell>
                       <TableCell>
+                        {canEditGovernorates ? (
                         <Input
                           type="number"
                           min="0"
@@ -226,7 +237,11 @@ const Governorates = () => {
                           }}
                           className="w-32"
                         />
+                        ) : (
+                          <span>{gov.shipping_cost} ج.م</span>
+                        )}
                       </TableCell>
+                      {canEditGovernorates && (
                       <TableCell>
                         <div className="flex items-center gap-2">
                           {editingId === gov.id && (
@@ -272,6 +287,7 @@ const Governorates = () => {
                           </AlertDialog>
                         </div>
                       </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
