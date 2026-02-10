@@ -431,6 +431,48 @@ const Cashbox = () => {
               </Card>
             </div>
 
+            {/* Payment Method Summary */}
+            {transactions && transactions.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <Card className="border-amber-500/20 bg-amber-500/5">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">💵 إجمالي الكاش</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-amber-700">
+                      {transactions
+                        .filter((t: any) => t.payment_method !== 'transfer')
+                        .reduce((sum: number, t: any) => {
+                          const amt = parseFloat(t.amount);
+                          return t.type === 'income' ? sum + amt : sum - amt;
+                        }, 0).toFixed(2)} ج.م
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {transactions.filter((t: any) => t.payment_method !== 'transfer').length} حركة
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="border-blue-500/20 bg-blue-500/5">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">💳 إجمالي النقدي (تحويل)</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-blue-700">
+                      {transactions
+                        .filter((t: any) => t.payment_method === 'transfer')
+                        .reduce((sum: number, t: any) => {
+                          const amt = parseFloat(t.amount);
+                          return t.type === 'income' ? sum + amt : sum - amt;
+                        }, 0).toFixed(2)} ج.م
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {transactions.filter((t: any) => t.payment_method === 'transfer').length} حركة
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
             {/* Transactions Table */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
