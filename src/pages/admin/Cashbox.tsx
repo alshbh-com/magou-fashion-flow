@@ -567,6 +567,7 @@ const Cashbox = () => {
                         <TableRow>
                           <TableHead>النوع</TableHead>
                           <TableHead>المبلغ</TableHead>
+                          <TableHead>طريقة الدفع</TableHead>
                           <TableHead>السبب</TableHead>
                           <TableHead>الوصف</TableHead>
                           <TableHead>المستخدم</TableHead>
@@ -594,6 +595,15 @@ const Cashbox = () => {
                             }`}>
                               {transaction.type === 'income' ? '+' : '-'}
                               {parseFloat(transaction.amount).toFixed(2)} ج.م
+                            </TableCell>
+                            <TableCell>
+                              <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
+                                transaction.payment_method === 'transfer'
+                                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                  : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                              }`}>
+                                {transaction.payment_method === 'transfer' ? '💳 نقدي' : '💵 كاش'}
+                              </span>
                             </TableCell>
                             <TableCell>
                               <span className="bg-muted px-2 py-1 rounded text-sm">
