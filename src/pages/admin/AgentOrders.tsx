@@ -555,10 +555,12 @@ const AgentOrders = () => {
       amount,
       selectedDate,
       cashboxId,
+      paymentMethod: method,
     }: {
       amount: number;
       selectedDate: string;
       cashboxId: string;
+      paymentMethod: "cash" | "transfer";
     }) => {
       if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
       if (!cashboxId) throw new Error("يرجى اختيار خزنة");
