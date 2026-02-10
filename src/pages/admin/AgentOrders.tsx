@@ -805,7 +805,8 @@ const AgentOrders = () => {
     addPaymentMutation.mutate({ 
       amount, 
       selectedDate: paymentDate, 
-      cashboxId: selectedCashboxId
+      cashboxId: selectedCashboxId,
+      paymentMethod
     });
   };
 
