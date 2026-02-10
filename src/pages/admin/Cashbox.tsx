@@ -47,7 +47,8 @@ const Cashbox = () => {
     type: "income" as "income" | "expense",
     amount: "",
     reason: "manual",
-    description: ""
+    description: "",
+    payment_method: "cash" as "cash" | "transfer"
   });
 
   const [newCashboxForm, setNewCashboxForm] = useState({
@@ -193,7 +194,8 @@ const Cashbox = () => {
           reason: data.reason,
           description: data.description || null,
           user_id: currentUser?.id || null,
-          username: currentUser?.username || null
+          username: currentUser?.username || null,
+          payment_method: data.payment_method,
         });
       
       if (error) throw error;
@@ -208,7 +210,7 @@ const Cashbox = () => {
         { amount: transactionForm.amount, reason: transactionForm.reason }
       );
       setAddTransactionOpen(false);
-      setTransactionForm({ type: "income", amount: "", reason: "manual", description: "" });
+      setTransactionForm({ type: "income", amount: "", reason: "manual", description: "", payment_method: "cash" });
     },
     onError: (error: any) => {
       console.error('Transaction error:', error);
@@ -431,6 +433,48 @@ const Cashbox = () => {
               </Card>
             </div>
 
+            {/* Payment Method Summary */}
+            {transactions && transactions.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <Card className="border-amber-500/20 bg-amber-500/5">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">💵 إجمالي الكاش</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-amber-700">
+                      {transactions
+                        .filter((t: any) => t.payment_method !== 'transfer')
+                        .reduce((sum: number, t: any) => {
+                          const amt = parseFloat(t.amount);
+                          return t.type === 'income' ? sum + amt : sum - amt;
+                        }, 0).toFixed(2)} ج.م
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {transactions.filter((t: any) => t.payment_method !== 'transfer').length} حركة
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="border-blue-500/20 bg-blue-500/5">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">💳 إجمالي النقدي (تحويل)</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-blue-700">
+                      {transactions
+                        .filter((t: any) => t.payment_method === 'transfer')
+                        .reduce((sum: number, t: any) => {
+                          const amt = parseFloat(t.amount);
+                          return t.type === 'income' ? sum + amt : sum - amt;
+                        }, 0).toFixed(2)} ج.م
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {transactions.filter((t: any) => t.payment_method === 'transfer').length} حركة
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
             {/* Transactions Table */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
@@ -508,6 +552,21 @@ const Cashbox = () => {
                             </Select>
                           </div>
                           <div>
+                            <Label>طريقة الدفع</Label>
+                            <Select 
+                              value={transactionForm.payment_method} 
+                              onValueChange={(v) => setTransactionForm({...transactionForm, payment_method: v as "cash" | "transfer"})}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="cash">💵 كاش</SelectItem>
+                                <SelectItem value="transfer">💳 نقدي (تحويل)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
                             <Label>المبلغ (ج.م)</Label>
                             <Input
                               type="number"
@@ -567,6 +626,7 @@ const Cashbox = () => {
                         <TableRow>
                           <TableHead>النوع</TableHead>
                           <TableHead>المبلغ</TableHead>
+                          <TableHead>طريقة الدفع</TableHead>
                           <TableHead>السبب</TableHead>
                           <TableHead>الوصف</TableHead>
                           <TableHead>المستخدم</TableHead>
@@ -594,6 +654,15 @@ const Cashbox = () => {
                             }`}>
                               {transaction.type === 'income' ? '+' : '-'}
                               {parseFloat(transaction.amount).toFixed(2)} ج.م
+                            </TableCell>
+                            <TableCell>
+                              <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
+                                transaction.payment_method === 'transfer'
+                                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                  : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                              }`}>
+                                {transaction.payment_method === 'transfer' ? '💳 نقدي' : '💵 كاش'}
+                              </span>
                             </TableCell>
                             <TableCell>
                               <span className="bg-muted px-2 py-1 rounded text-sm">

@@ -81,6 +81,7 @@ const AgentOrders = () => {
   const [paymentAmount, setPaymentAmount] = useState<string>("");
   const [paymentDate, setPaymentDate] = useState<string>(today); // تاريخ الدفعة
   const [selectedCashboxId, setSelectedCashboxId] = useState<string>(""); // الخزنة المختارة
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "transfer">("cash"); // طريقة الدفع
 
   // إدارة/تعديل/حذف الدفعات لأي يوم
   const [paymentsManagerOpen, setPaymentsManagerOpen] = useState(false);
@@ -554,10 +555,12 @@ const AgentOrders = () => {
       amount,
       selectedDate,
       cashboxId,
+      paymentMethod: method,
     }: {
       amount: number;
       selectedDate: string;
       cashboxId: string;
+      paymentMethod: "cash" | "transfer";
     }) => {
       if (!selectedAgentId) throw new Error("لم يتم اختيار مندوب");
       if (!cashboxId) throw new Error("يرجى اختيار خزنة");
@@ -584,6 +587,7 @@ const AgentOrders = () => {
         insertedPaymentId = paymentRow?.id || null;
 
         // 2) Create the cashbox deposit (income)
+        const methodLabel = method === 'cash' ? 'كاش' : 'نقدي';
         const { error: cashboxError } = await supabase
           .from("cashbox_transactions")
           .insert({
@@ -591,9 +595,10 @@ const AgentOrders = () => {
             amount,
             type: "income",
             reason: "manual",
-            description: `إيداع (دفعة مقدمة) من ${agentName} - ${amount.toFixed(2)} ج.م • بواسطة ${currentUser?.username || "غير معروف"}`,
+            description: `إيداع (دفعة مقدمة) من ${agentName} - ${amount.toFixed(2)} ج.م (${methodLabel}) • بواسطة ${currentUser?.username || "غير معروف"}`,
             user_id: currentUser?.id || null,
             username: currentUser?.username || "غير معروف",
+            payment_method: method,
           });
 
         if (cashboxError) throw cashboxError;
@@ -619,6 +624,8 @@ const AgentOrders = () => {
       setPaymentAmount("");
       setPaymentDate(today);
       setSelectedCashboxId(todayCashbox?.id || "");
+      setNonTodayCashboxUnlocked(false);
+      setPaymentMethod("cash");
       setNonTodayCashboxUnlocked(false);
     },
     onError: (error: any) => {
@@ -804,7 +811,8 @@ const AgentOrders = () => {
     addPaymentMutation.mutate({ 
       amount, 
       selectedDate: paymentDate, 
-      cashboxId: selectedCashboxId
+      cashboxId: selectedCashboxId,
+      paymentMethod
     });
   };
 
@@ -2091,6 +2099,18 @@ const AgentOrders = () => {
                           />
                         </div>
                         <div>
+                          <Label>طريقة الدفع</Label>
+                          <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as "cash" | "transfer")}>
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="cash">💵 كاش</SelectItem>
+                              <SelectItem value="transfer">💳 نقدي (تحويل)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
                           <Label>إضافة الدفعة ليوم</Label>
                           <Select value={paymentDate} onValueChange={setPaymentDate}>
                             <SelectTrigger className="w-full">
@@ -2155,6 +2175,7 @@ const AgentOrders = () => {
                             setPaymentDate(today);
                             setSelectedCashboxId(todayCashbox?.id || "");
                             setNonTodayCashboxUnlocked(false);
+                            setPaymentMethod("cash");
                           }}
                         >
                           إلغاء
