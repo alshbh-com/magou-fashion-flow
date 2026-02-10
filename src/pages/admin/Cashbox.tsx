@@ -47,7 +47,8 @@ const Cashbox = () => {
     type: "income" as "income" | "expense",
     amount: "",
     reason: "manual",
-    description: ""
+    description: "",
+    payment_method: "cash" as "cash" | "transfer"
   });
 
   const [newCashboxForm, setNewCashboxForm] = useState({
