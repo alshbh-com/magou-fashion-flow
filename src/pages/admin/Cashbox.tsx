@@ -552,6 +552,21 @@ const Cashbox = () => {
                             </Select>
                           </div>
                           <div>
+                            <Label>طريقة الدفع</Label>
+                            <Select 
+                              value={transactionForm.payment_method} 
+                              onValueChange={(v) => setTransactionForm({...transactionForm, payment_method: v as "cash" | "transfer"})}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="cash">💵 كاش</SelectItem>
+                                <SelectItem value="transfer">💳 نقدي (تحويل)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
                             <Label>المبلغ (ج.م)</Label>
                             <Input
                               type="number"
