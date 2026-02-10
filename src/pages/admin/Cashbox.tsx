@@ -194,7 +194,8 @@ const Cashbox = () => {
           reason: data.reason,
           description: data.description || null,
           user_id: currentUser?.id || null,
-          username: currentUser?.username || null
+          username: currentUser?.username || null,
+          payment_method: data.payment_method,
         });
       
       if (error) throw error;
