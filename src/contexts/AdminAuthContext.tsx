@@ -44,6 +44,57 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
+  // Auto-refresh permissions every 5 seconds
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const refreshPermissions = async () => {
+      try {
+        const { data: user } = await supabase
+          .from('admin_users')
+          .select('*')
+          .eq('id', currentUser.id)
+          .eq('is_active', true)
+          .maybeSingle();
+
+        if (!user) {
+          // User deactivated or deleted - force logout
+          setCurrentUser(null);
+          sessionStorage.removeItem('adminUser');
+          return;
+        }
+
+        const { data: permissions } = await supabase
+          .from('admin_user_permissions')
+          .select('permission, permission_type')
+          .eq('user_id', user.id);
+
+        const updatedUser: AdminUser = {
+          id: user.id,
+          username: user.username,
+          password: user.password,
+          permissions: permissions?.map(p => ({
+            permission: p.permission,
+            permission_type: p.permission_type as 'view' | 'edit'
+          })) || []
+        };
+
+        // Only update if permissions actually changed
+        const currentPermsStr = JSON.stringify(currentUser.permissions);
+        const newPermsStr = JSON.stringify(updatedUser.permissions);
+        if (currentPermsStr !== newPermsStr || currentUser.password !== updatedUser.password) {
+          setCurrentUser(updatedUser);
+          sessionStorage.setItem('adminUser', JSON.stringify(updatedUser));
+        }
+      } catch (error) {
+        console.error('Error refreshing permissions:', error);
+      }
+    };
+
+    const interval = setInterval(refreshPermissions, 5000);
+    return () => clearInterval(interval);
+  }, [currentUser?.id]);
+
   // Login by password only
   const login = async (password: string): Promise<boolean> => {
     try {
